@@ -51,8 +51,11 @@ const BASEMAPS = {
     })
   },
   light: {
-    label: 'Street',
-    source: new OSM()
+    label: 'Street Light',
+    source: new XYZ({
+      url: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      attributions: '&copy; OpenStreetMap &copy; CARTO'
+    })
   }
 };
 
@@ -82,14 +85,22 @@ function layerStyleFactory(layer) {
     });
 
     if (geometryType === 'Point' || geometryType === 'MultiPoint') {
-      return new Style({
-        image: new CircleStyle({
-          radius: 7,
-          fill: new Fill({ color }),
-          stroke: new Stroke({ color: '#ffffff', width: 2 })
+      return [
+        new Style({
+          image: new CircleStyle({
+            radius: 11,
+            fill: new Fill({ color: layerFill(color, 0.28) })
+          })
         }),
-        text: commonText
-      });
+        new Style({
+          image: new CircleStyle({
+            radius: 6,
+            fill: new Fill({ color }),
+            stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+          }),
+          text: commonText
+        })
+      ];
     }
 
     if (geometryType === 'LineString' || geometryType === 'MultiLineString') {
@@ -116,25 +127,33 @@ function layerStyleFactory(layer) {
 }
 
 function highlightStyleFactory() {
-  return new Style({
-    stroke: new Stroke({ color: '#f8fafc', width: 4 }),
-    fill: new Fill({ color: 'rgba(250, 204, 21, 0.22)' }),
-    image: new CircleStyle({
-      radius: 8,
-      fill: new Fill({ color: '#facc15' }),
-      stroke: new Stroke({ color: '#ffffff', width: 2 })
+  return [
+    new Style({
+      stroke: new Stroke({ color: '#facc15', width: 4 }),
+      fill: new Fill({ color: 'rgba(250, 204, 21, 0.08)' })
+    }),
+    new Style({
+      stroke: new Stroke({ color: '#ffffff', width: 1.5 })
     })
-  });
+  ];
 }
 
 function pointMarkerStyle(color) {
-  return new Style({
-    image: new CircleStyle({
-      radius: 9,
-      fill: new Fill({ color }),
-      stroke: new Stroke({ color: '#ffffff', width: 2 })
+  return [
+    new Style({
+      image: new CircleStyle({
+        radius: 13,
+        fill: new Fill({ color: layerFill(color, 0.22) })
+      })
+    }),
+    new Style({
+      image: new CircleStyle({
+        radius: 7,
+        fill: new Fill({ color }),
+        stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+      })
     })
-  });
+  ];
 }
 
 function App() {
@@ -1039,7 +1058,7 @@ function App() {
               </div>
             </div>
 
-            <div className="relative h-[72vh] min-h-[660px]">
+            <div className="relative h-[72vh] min-h-[660px] map-shell">
               <div ref={mapElementRef} className="h-full w-full" />
               <div
                 ref={tooltipRef}

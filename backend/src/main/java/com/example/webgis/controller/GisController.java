@@ -1,17 +1,12 @@
 package com.example.webgis.controller;
 
 import com.example.webgis.model.LayerCatalogResponse;
-import com.example.webgis.model.RecommendationRequest;
-import com.example.webgis.model.RecommendationResponse;
 import com.example.webgis.service.GeoJsonService;
-import com.example.webgis.service.RecommendationService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,11 +24,9 @@ import java.util.Map;
 public class GisController {
 
     private final GeoJsonService geoJsonService;
-    private final RecommendationService recommendationService;
 
-    public GisController(GeoJsonService geoJsonService, RecommendationService recommendationService) {
+    public GisController(GeoJsonService geoJsonService) {
         this.geoJsonService = geoJsonService;
-        this.recommendationService = recommendationService;
     }
 
     @GetMapping("/health")
@@ -49,10 +42,5 @@ public class GisController {
     @GetMapping("/layers/{layerId}")
     public ResponseEntity<JsonNode> getLayer(@PathVariable String layerId) throws IOException {
         return ResponseEntity.ok(geoJsonService.getLayerById(layerId));
-    }
-
-    @PostMapping("/recommendations")
-    public RecommendationResponse getRecommendations(@RequestBody RecommendationRequest request) {
-        return recommendationService.generate(request);
     }
 }
