@@ -704,12 +704,30 @@ function App() {
   async function askAssistant(customQuestion) {
     const question = customQuestion || assistantQuestion;
     const selectedAreaGeoJson = selectedAreaPolygon ? JSON.parse(writeGeoJsonFeatures([selectedAreaPolygon]))?.features?.[0] : null;
+    
+    const allFeatures = layers.flatMap((layer) => {
+      const features = readGeoJsonFeatures(layer.geojson || { type: 'FeatureCollection', features: [] });
+      return features.map((feat) => {
+        const props = feat.getProperties();
+        const geom = feat.getGeometry();
+        const coords = geom ? toLonLat(geom.getCoordinates()) : null;
+        return {
+          layerId: layer.id,
+          layerName: layer.name,
+          name: props.name || props.title || props.label || 'Unnamed feature',
+          category: props.category || layer.name,
+          coordinates: coords
+        };
+      });
+    });
+
     const context = {
       selectedCoordinates,
       radiusMeters,
       activeLayerId,
       selectedArea: selectedAreaGeoJson,
       selectedAreaAnalysis,
+      allFeatures,
       layers: layers.map(({ id, name, sourceType, metadata, visible, opacity, color, labels }) => ({
         id,
         name,
@@ -721,6 +739,13 @@ function App() {
         labels
       }))
     };
+
+    const history = assistantMessages
+      .filter((msg) => msg.text !== EMPTY_MESSAGE.text)
+      .map((msg) => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.text }]
+      }));
 
     setAssistantMessages((current) => [
       ...current,
@@ -735,7 +760,8 @@ function App() {
         },
         body: JSON.stringify({
           question,
-          context
+          context,
+          history
         })
       });
       if (!response.ok) {

@@ -12,6 +12,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -35,15 +37,19 @@ public class GeminiAssistantService {
 
         try {
             String prompt = buildPrompt(request);
+            List<Map<String, Object>> contents = new ArrayList<>();
+            if (request.getHistory() != null) {
+                contents.addAll(request.getHistory());
+            }
+            contents.add(Map.of(
+                    "role", "user",
+                    "parts", new Object[]{
+                            Map.of("text", prompt)
+                    }
+            ));
+
             Map<String, Object> payload = Map.of(
-                    "contents", new Object[]{
-                            Map.of(
-                                    "role", "user",
-                                    "parts", new Object[]{
-                                            Map.of("text", prompt)
-                                    }
-                            )
-                    },
+                    "contents", contents,
                     "generationConfig", Map.of(
                             "temperature", 0.4,
                             "topP", 0.9,
@@ -75,14 +81,17 @@ public class GeminiAssistantService {
 
     private String buildPrompt(AssistantRequest request) {
         return """
-                You are a professional GIS decision support assistant for a management presentation.
-                Use the supplied spatial context to answer in concise business language.
-                Do not mention that you are simulated unless needed.
-
-                Question: %s
-
-                Context JSON:
+                You are a professional location intelligence expert and GIS decision support assistant.
+                Analyze the provided Map Context and use it to answer the user's question with actionable business insights.
+                
+                Keep your answer structured, concise, and professional. 
+                Identify potential competitors or demand drivers from the listed map markers/features. 
+                Give data-driven reasoning (e.g. proximity, density, and local suitability factors) when asked about setting up businesses like gyms, fruit shops, or others.
+                
+                Map Context:
                 %s
-                """.formatted(request.getQuestion(), request.getContext());
+                
+                Question: %s
+                """.formatted(request.getContext() != null ? request.getContext().toString() : "{}", request.getQuestion());
     }
 }
