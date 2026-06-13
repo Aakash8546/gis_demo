@@ -19,7 +19,6 @@ import {
   Activity,
   ArrowDown,
   ArrowUp,
-  Bot,
   CircleDot,
   Eye,
   EyeOff,
@@ -30,7 +29,6 @@ import {
   PencilLine,
   Plus,
   Trash2,
-  WandSparkles,
 } from 'lucide-react';
 import {
   countGeometries,
@@ -58,10 +56,7 @@ const BASEMAPS = {
   }
 };
 
-const EMPTY_MESSAGE = {
-  role: 'assistant',
-  text: 'Select a location or add a layer to begin the spatial analysis.'
-};
+
 
 function layerFill(color, alpha = 0.18) {
   return `${color}${Math.round(alpha * 255)
@@ -166,8 +161,7 @@ function App() {
   const [hoverCoordinates, setHoverCoordinates] = useState(null);
   const [radiusMeters, setRadiusMeters] = useState(1000);
   const [drawMode, setDrawMode] = useState('None');
-  const [assistantQuestion, setAssistantQuestion] = useState('Should I open a fruit shop here?');
-  const [assistantMessages, setAssistantMessages] = useState([EMPTY_MESSAGE]);
+
   const [statusMessage, setStatusMessage] = useState('');
   const [basemap, setBasemap] = useState('dark');
   const [drawRevision, setDrawRevision] = useState(0);
@@ -465,11 +459,13 @@ function App() {
     source.on('addfeature', handleDrawChange);
     source.on('removefeature', handleDrawChange);
     source.on('clear', handleDrawChange);
+    source.on('change', handleDrawChange);
 
     return () => {
       source.un('addfeature', handleDrawChange);
       source.un('removefeature', handleDrawChange);
       source.un('clear', handleDrawChange);
+      source.un('change', handleDrawChange);
     };
   }, []);
 
@@ -701,93 +697,7 @@ function App() {
     ];
   }, [selectedAreaAnalysis]);
 
-  async function askAssistant(customQuestion) {
-    const question = customQuestion || assistantQuestion;
-    const selectedAreaGeoJson = selectedAreaPolygon ? JSON.parse(writeGeoJsonFeatures([selectedAreaPolygon]))?.features?.[0] : null;
-    
-    const allFeatures = layers.flatMap((layer) => {
-      const features = readGeoJsonFeatures(layer.geojson || { type: 'FeatureCollection', features: [] });
-      return features.map((feat) => {
-        const props = feat.getProperties();
-        const geom = feat.getGeometry();
-        const coords = geom ? toLonLat(geom.getCoordinates()) : null;
-        return {
-          layerId: layer.id,
-          layerName: layer.name,
-          name: props.name || props.title || props.label || 'Unnamed feature',
-          category: props.category || layer.name,
-          coordinates: coords
-        };
-      });
-    });
 
-    const context = {
-      selectedCoordinates,
-      radiusMeters,
-      activeLayerId,
-      selectedArea: selectedAreaGeoJson,
-      selectedAreaAnalysis,
-      allFeatures,
-      layers: layers.map(({ id, name, sourceType, metadata, visible, opacity, color, labels }) => ({
-        id,
-        name,
-        sourceType,
-        metadata,
-        visible,
-        opacity,
-        color,
-        labels
-      }))
-    };
-
-    const history = assistantMessages
-      .filter((msg) => msg.text !== EMPTY_MESSAGE.text)
-      .map((msg) => ({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.text }]
-      }));
-
-    setAssistantMessages((current) => [
-      ...current,
-      { role: 'user', text: question }
-    ]);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/assistant`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          question,
-          context,
-          history
-        })
-      });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      const payload = await response.json();
-
-      setAssistantMessages((current) => [
-        ...current,
-        {
-          role: 'assistant',
-          text: payload.answer
-        }
-      ]);
-      setStatusMessage('Gemini generated the latest response.');
-    } catch (error) {
-      setAssistantMessages((current) => [
-        ...current,
-        {
-          role: 'assistant',
-          text: 'Gemini could not answer right now. Please check the backend connection or API key.'
-        }
-      ]);
-      setStatusMessage('Gemini assistant is temporarily unavailable.');
-    }
-  }
 
   const totalLayers = layers.length;
 
@@ -800,9 +710,9 @@ function App() {
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.45em] text-cyan-300">AI-Powered WebGIS Decision Support</p>
-              <h1 className="mt-2 text-2xl font-semibold text-white lg:text-3xl">Tactical GIS Command Platform POC</h1>
+              <h1 className="mt-2 text-2xl font-semibold text-white lg:text-3xl">Geo_Insight</h1>
               <p className="mt-2 max-w-4xl text-sm text-slate-300">
-                Create empty layers, add point features manually, and ask the Gemini assistant for business guidance.
+                Advanced Geospatial Intelligence for Planning, Analysis, and AI-Assisted Decision Support
               </p>
             </div>
 
@@ -823,7 +733,7 @@ function App() {
           </div>
         </header>
 
-        <div className="grid flex-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)_380px]">
+        <div className="grid flex-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
           <aside className="space-y-4 overflow-hidden">
             <div className="rounded-[28px] border border-white/10 bg-white/6 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
               <div className="mb-4 flex items-center justify-between">
@@ -1073,6 +983,44 @@ function App() {
                 </div>
               </div>
             </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-white/6 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
+              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.35em] text-slate-300">
+                <PencilLine className="h-4 w-4 text-cyan-300" />
+                Selected Area
+              </h2>
+
+              {selectedAreaAnalysis ? (
+                <div className="mt-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {areaMetrics?.map(([label, value]) => (
+                      <div key={label} className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3">
+                        <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">{label}</p>
+                        <p className="mt-1 text-sm font-semibold text-white">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
+                    <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Features Inside</p>
+                    <div className="mt-2 space-y-2">
+                      {selectedAreaAnalysis.featuresInside.slice(0, 5).map((item, index) => (
+                        <div key={`${item.layerId}-${item.name}-${index}`} className="rounded-xl bg-white/5 px-3 py-2">
+                          <p className="text-sm font-semibold text-white">{item.name}</p>
+                          <p className="text-xs text-slate-400">
+                            {item.layerName} · {item.geometryType}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
+                  Draw a polygon on the map to see the selected area summary.
+                </div>
+              )}
+            </div>
           </aside>
 
           <main className="overflow-hidden rounded-[32px] border border-white/10 bg-white/6 shadow-2xl shadow-black/20 backdrop-blur-xl">
@@ -1120,90 +1068,6 @@ function App() {
             </div>
           </main>
 
-          <aside className="space-y-4 overflow-hidden">
-            <div className="rounded-[28px] border border-white/10 bg-white/6 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
-              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.35em] text-slate-300">
-                <Bot className="h-4 w-4 text-cyan-300" />
-                AI Assistant
-              </h2>
-
-              <div className="mt-4 flex h-[calc(100vh-260px)] min-h-[560px] flex-col rounded-[24px] border border-white/10 bg-slate-950/70 p-3">
-                <div className="mb-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-300">
-                  Gemini is wired to the backend. Ask a business question after you add a layer or place markers.
-                </div>
-                <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-                  {assistantMessages.map((message, index) => (
-                    <div
-                      key={`${message.role}-${index}`}
-                      className={`max-w-[92%] rounded-2xl px-4 py-3 text-sm ${
-                        message.role === 'user' ? 'ml-auto bg-cyan-400 text-slate-950' : 'bg-white/8 text-slate-100'
-                      }`}
-                    >
-                      {message.text}
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-3 space-y-2">
-                  <textarea
-                    value={assistantQuestion}
-                    onChange={(event) => setAssistantQuestion(event.target.value)}
-                    className="h-24 w-full rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-white outline-none placeholder:text-slate-500"
-                    placeholder="Ask the GIS assistant..."
-                  />
-                  <button onClick={() => askAssistant()} type="button" className="flex w-full items-center justify-center gap-2 rounded-2xl bg-cyan-400 px-3 py-3 text-sm font-semibold text-slate-950">
-                    <WandSparkles className="h-4 w-4" />
-                    Ask Assistant
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-[28px] border border-white/10 bg-white/6 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
-              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.35em] text-slate-300">
-                <PencilLine className="h-4 w-4 text-cyan-300" />
-                Selected Area
-              </h2>
-
-              {selectedAreaAnalysis ? (
-                <div className="mt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    {areaMetrics?.map(([label, value]) => (
-                      <div key={label} className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3">
-                        <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">{label}</p>
-                        <p className="mt-1 text-sm font-semibold text-white">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
-                    <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Features Inside</p>
-                    <div className="mt-2 space-y-2">
-                      {selectedAreaAnalysis.featuresInside.slice(0, 5).map((item, index) => (
-                        <div key={`${item.layerId}-${item.name}-${index}`} className="rounded-xl bg-white/5 px-3 py-2">
-                          <p className="text-sm font-semibold text-white">{item.name}</p>
-                          <p className="text-xs text-slate-400">
-                            {item.layerName} · {item.geometryType}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => askAssistant(`Analyze the selected area for a business site. Area contains ${selectedAreaAnalysis.totalFeatures} features.`)}
-                    className="w-full rounded-2xl bg-cyan-400 px-3 py-3 text-sm font-semibold text-slate-950"
-                  >
-                    Ask Gemini About Area
-                  </button>
-                </div>
-              ) : (
-                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
-                  Draw a polygon on the map to see the selected area summary.
-                </div>
-              )}
-            </div>
-          </aside>
         </div>
       </div>
     </div>

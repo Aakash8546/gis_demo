@@ -1,6 +1,7 @@
 import * as turf from '@turf/turf';
 import GeoJSON from 'ol/format/GeoJSON';
 import { fromLonLat } from 'ol/proj';
+import { getArea } from 'ol/sphere';
 
 export const BUFFER_PRESETS = [500, 1000, 2000];
 
@@ -252,12 +253,12 @@ export function analyzeSelectedArea({ polygonFeature, layers }) {
     return null;
   }
 
-  const polygonGeoJson = JSON.parse(writeGeoJsonFeatures([polygonFeature]))?.features?.[0];
-  if (!polygonGeoJson) {
+  const polyGeom = polygonFeature.getGeometry();
+  if (!polyGeom) {
     return null;
   }
 
-  const areaSquareMeters = turf.area(polygonGeoJson);
+  const areaSquareMeters = getArea(polyGeom);
   const featuresInside = [];
   const layerCounts = {};
 
@@ -266,16 +267,16 @@ export function analyzeSelectedArea({ polygonFeature, layers }) {
     let count = 0;
 
     sourceFeatures.forEach((feature) => {
-      const featureGeoJson = JSON.parse(writeGeoJsonFeatures([feature]))?.features?.[0];
-      if (!featureGeoJson) {
-        return;
-      }
+      const geom = feature.getGeometry();
+      if (!geom) return;
 
-      const geometryType = featureGeoJson.geometry?.type;
-      const intersects =
-        geometryType === 'Point' || geometryType === 'MultiPoint'
-          ? turf.booleanPointInPolygon(featureGeoJson, polygonGeoJson)
-          : turf.booleanIntersects(polygonGeoJson, featureGeoJson);
+      let intersects = false;
+      if (geom.getType() === 'Point' || geom.getType() === 'MultiPoint') {
+        const coords = geom.getCoordinates();
+        intersects = polyGeom.intersectsCoordinate(coords);
+      } else {
+        intersects = polyGeom.intersectsExtent(geom.getExtent());
+      }
 
       if (intersects) {
         count += 1;
@@ -285,7 +286,7 @@ export function analyzeSelectedArea({ polygonFeature, layers }) {
           layerId: layer.id,
           layerName: layer.name,
           name: properties.name || properties.title || properties.label || 'Unnamed feature',
-          geometryType: geometryType || 'Unknown'
+          geometryType: geom.getType() || 'Unknown'
         });
       }
     });
