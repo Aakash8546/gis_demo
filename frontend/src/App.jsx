@@ -4,7 +4,6 @@ import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
-import OSM from 'ol/source/OSM';
 import XYZ from 'ol/source/XYZ';
 import Draw from 'ol/interaction/Draw';
 import Modify from 'ol/interaction/Modify';
@@ -35,12 +34,10 @@ import {
   analyzeSelectedArea,
   createLayerMetadata,
   formatCoordinates,
-  projectLonLat,
   readGeoJsonFeatures,
   writeGeoJsonFeatures
 } from './utils/spatial';
 
-const API_BASE_URL = '/api';
 
 const BASEMAPS = {
   dark: {
@@ -175,10 +172,8 @@ function App() {
   const baseSelection = useRef('dark');
 
   const [layers, setLayers] = useState([]);
-  const [datasets, setDatasets] = useState({});
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
   const [hoverCoordinates, setHoverCoordinates] = useState(null);
-  const [radiusMeters, setRadiusMeters] = useState(1000);
   const [drawMode, setDrawMode] = useState('None');
 
   const [statusMessage, setStatusMessage] = useState('');
@@ -199,7 +194,6 @@ function App() {
     coordinates: null
   });
   const layersRef = useRef([]);
-  const datasetsRef = useRef({});
   const markerModeRef = useRef(markerModeEnabled);
   const activeLayerIdRef = useRef(activeLayerId);
   const [hoveredMarkerInfo, setHoveredMarkerInfo] = useState(null);
@@ -215,7 +209,6 @@ function App() {
   useEffect(() => {
     async function loadLayers() {
       setLayers([]);
-      setDatasets({});
       setStatusMessage('Create a layer and add markers to begin.');
     }
 
@@ -225,10 +218,6 @@ function App() {
   useEffect(() => {
     layersRef.current = layers;
   }, [layers]);
-
-  useEffect(() => {
-    datasetsRef.current = datasets;
-  }, [datasets]);
 
   useEffect(() => {
     markerModeRef.current = markerModeEnabled;
@@ -533,11 +522,7 @@ function App() {
         if (layer.id !== layerId) {
           return layer;
         }
-        const next = typeof updater === 'function' ? updater(layer) : updater;
-        if (next.geojson) {
-          setDatasets((datasetsState) => ({ ...datasetsState, [layerId]: next.geojson }));
-        }
-        return next;
+        return typeof updater === 'function' ? updater(layer) : updater;
       })
     );
   }
@@ -558,11 +543,6 @@ function App() {
 
   function removeLayer(layerId) {
     setLayers((current) => current.filter((layer) => layer.id !== layerId));
-    setDatasets((current) => {
-      const next = { ...current };
-      delete next[layerId];
-      return next;
-    });
   }
 
   function zoomToLayer(layerId) {
@@ -580,6 +560,7 @@ function App() {
 
   function clearDrawings() {
     drawSourceRef.current.clear();
+    highlightSourceRef.current.clear();
     setStatusMessage('Selected area cleared.');
   }
 
@@ -624,7 +605,6 @@ function App() {
       };
 
       setLayers((current) => [...current, newLayer]);
-      setDatasets((current) => ({ ...current, [layerId]: geojson }));
       setActiveLayerId(layerId);
       setLayerDialogOpen(false);
       setStatusMessage(`Created ${layerName}. Use marker mode to add features.`);
@@ -712,7 +692,7 @@ function App() {
     return [
       ['Area', `${selectedAreaAnalysis.areaSquareKilometers.toFixed(2)} km²`],
       ['Features Inside', selectedAreaAnalysis.totalFeatures],
-      ['Polygon Layers', Object.entries(selectedAreaAnalysis.layerCounts).filter(([, count]) => count > 0).length]
+      ['Intersecting Layers', Object.entries(selectedAreaAnalysis.layerCounts).filter(([, count]) => count > 0).length]
     ];
   }, [selectedAreaAnalysis]);
 

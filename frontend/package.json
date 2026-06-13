@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@turf/turf": "^7.2.0",
     "ol": "^10.6.1",
     "lucide-react": "^0.455.0",
     "react": "^18.3.1",
