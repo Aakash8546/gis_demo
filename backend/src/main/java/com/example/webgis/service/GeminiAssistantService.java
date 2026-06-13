@@ -22,7 +22,7 @@ public class GeminiAssistantService {
             .build();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${GEMINI}")
+    @Value("${gemini.api.key:}")
     private String geminiApiKey;
 
     @Value("${gemini.model:gemini-2.5-flash}")

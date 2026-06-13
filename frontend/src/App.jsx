@@ -25,6 +25,8 @@ import {
   EyeOff,
   Layers3,
   LocateFixed,
+  MapPin,
+  Navigation,
   PencilLine,
   Plus,
   Trash2,
@@ -45,18 +47,14 @@ const API_BASE_URL = '/api';
 const BASEMAPS = {
   dark: {
     label: 'Dark Streets',
-    layer: new TileLayer({
-      source: new XYZ({
-        url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        attributions: '&copy; OpenStreetMap &copy; CARTO'
-      })
+    source: new XYZ({
+      url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      attributions: '&copy; OpenStreetMap &copy; CARTO'
     })
   },
   light: {
     label: 'Street',
-    layer: new TileLayer({
-      source: new OSM()
-    })
+    source: new OSM()
   }
 };
 
@@ -155,7 +153,11 @@ function App() {
   const drawInteractionRef = useRef(null);
   const modifyInteractionRef = useRef(null);
   const snapInteractionRef = useRef(null);
-  const basemapLayerRef = useRef(BASEMAPS.dark.layer);
+  const basemapLayerRef = useRef(
+    new TileLayer({
+      source: BASEMAPS.dark.source
+    })
+  );
   const baseSelection = useRef('dark');
 
   const [layers, setLayers] = useState([]);
@@ -187,6 +189,8 @@ function App() {
   const datasetsRef = useRef({});
   const markerModeRef = useRef(markerModeEnabled);
   const activeLayerIdRef = useRef(activeLayerId);
+  const [hoveredMarkerInfo, setHoveredMarkerInfo] = useState(null);
+  const hoverTooltipRef = useRef(null);
 
   const mapCenter = useMemo(() => {
     if (selectedCoordinates) {
@@ -222,12 +226,19 @@ function App() {
   }, [activeLayerId]);
 
   useEffect(() => {
-    if (mapRef.current || !mapElementRef.current || !tooltipRef.current) {
+    if (mapRef.current || !mapElementRef.current || !tooltipRef.current || !hoverTooltipRef.current) {
       return;
     }
 
     const tooltipOverlay = new Overlay({
       element: tooltipRef.current,
+      positioning: 'bottom-center',
+      offset: [0, -18],
+      stopEvent: false
+    });
+
+    const hoverTooltipOverlay = new Overlay({
+      element: hoverTooltipRef.current,
       positioning: 'bottom-center',
       offset: [0, -18],
       stopEvent: false
@@ -271,7 +282,7 @@ function App() {
     const map = new Map({
       target: mapElementRef.current,
       layers: [basemapLayerRef.current, highlightLayer, selectedPointLayer, drawLayer],
-      overlays: [tooltipOverlay],
+      overlays: [tooltipOverlay, hoverTooltipOverlay],
       controls: defaultControls().extend([new ScaleLine()]),
       view: new View({
         center: fromLonLat(mapCenter),
@@ -280,7 +291,50 @@ function App() {
     });
 
     map.on('pointermove', (event) => {
-      setHoverCoordinates(toLonLat(event.coordinate));
+      const lonLat = toLonLat(event.coordinate);
+      setHoverCoordinates(lonLat);
+
+      if (event.dragging) {
+        hoverTooltipOverlay.setPosition(undefined);
+        setHoveredMarkerInfo(null);
+        return;
+      }
+
+      const pixel = map.getEventPixel(event.originalEvent);
+      let foundMarker = null;
+
+      map.forEachFeatureAtPixel(pixel, (feature, layer) => {
+        if (foundMarker) return;
+        if (layer && layer.get('kind') === 'data') {
+          const layerId = layer.get('layerId');
+          if (layerId === activeLayerIdRef.current) {
+            const geom = feature.getGeometry();
+            if (geom && (geom.getType() === 'Point' || geom.getType() === 'MultiPoint')) {
+              foundMarker = feature;
+            }
+          }
+        }
+      });
+
+      if (foundMarker) {
+        map.getTargetElement().style.cursor = 'pointer';
+        const geom = foundMarker.getGeometry();
+        const coords = toLonLat(geom.getCoordinates());
+        const props = foundMarker.getProperties();
+        const name = props.name || props.title || props.label || 'Unnamed Marker';
+        const category = props.category || props.__layerName || 'No Category';
+
+        setHoveredMarkerInfo({
+          name,
+          category,
+          coordinates: coords
+        });
+        hoverTooltipOverlay.setPosition(geom.getCoordinates());
+      } else {
+        map.getTargetElement().style.cursor = '';
+        hoverTooltipOverlay.setPosition(undefined);
+        setHoveredMarkerInfo(null);
+      }
     });
 
     map.on('singleclick', (event) => {
@@ -341,7 +395,7 @@ function App() {
       return;
     }
 
-    basemapLayerRef.current.setSource(basemap === 'dark' ? BASEMAPS.dark.layer.getSource() : BASEMAPS.light.layer.getSource());
+    basemapLayerRef.current.setSource(basemap === 'dark' ? BASEMAPS.dark.source : BASEMAPS.light.source);
     baseSelection.current = basemap;
   }, [basemap]);
 
@@ -780,6 +834,28 @@ function App() {
                           <span>{layer.sourceType}</span>
                           <span>{layer.metadata.featureCount} features</span>
                         </div>
+                        {activeLayerId === layer.id && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDrawMode('None');
+                              setMarkerModeEnabled((current) => !current);
+                              setStatusMessage(
+                                !markerModeEnabled
+                                  ? `Click the map to add a marker to ${layer.name}.`
+                                  : 'Marker mode disabled.'
+                              );
+                            }}
+                            className={`mt-3 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold border transition-all ${
+                              markerModeEnabled
+                                ? 'bg-cyan-400 text-slate-950 border-cyan-400'
+                                : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+                            }`}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            {markerModeEnabled ? 'Adding Markers...' : 'Add Marker'}
+                          </button>
+                        )}
                       </div>
                       <div className="flex flex-col gap-2">
                         <button
@@ -894,62 +970,77 @@ function App() {
               </h2>
               <div className="mt-4 space-y-3">
                 <p className="text-sm text-slate-300">
-                  Turn on marker mode for points or draw a polygon to inspect a selected area.
+                  Select a mode to navigate the map, place point markers, or draw area polygons.
                 </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDrawMode('None');
-                      setMarkerModeEnabled((current) => !current);
-                    }}
-                    className={`rounded-2xl px-3 py-3 text-sm font-semibold ${
-                      markerModeEnabled ? 'bg-cyan-400 text-slate-950' : 'bg-white/5 text-slate-100'
-                    }`}
-                  >
-                    {markerModeEnabled ? 'Marker Mode On' : 'Marker Mode Off'}
-                  </button>
+                
+                {/* Mode Selector */}
+                <div className="flex rounded-2xl bg-white/5 p-1 border border-white/5">
                   <button
                     type="button"
                     onClick={() => {
                       setMarkerModeEnabled(false);
-                      setDrawMode((current) => (current === 'Polygon' ? 'None' : 'Polygon'));
+                      setDrawMode('None');
+                      setStatusMessage('Navigation mode active. Pan, zoom, and select sites.');
                     }}
-                    className={`rounded-2xl px-3 py-3 text-sm font-semibold ${
-                      drawMode === 'Polygon' ? 'bg-cyan-400 text-slate-950' : 'bg-white/5 text-slate-100'
+                    className={`flex-1 rounded-xl py-2.5 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                      !markerModeEnabled && drawMode === 'None'
+                        ? 'bg-cyan-400 text-slate-950 shadow-md'
+                        : 'text-slate-300 hover:text-slate-100 hover:bg-white/5'
                     }`}
                   >
-                    {drawMode === 'Polygon' ? 'Polygon Mode On' : 'Draw Polygon'}
+                    <Navigation className="h-3.5 w-3.5" />
+                    <span>Navigate</span>
                   </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
+                  
                   <button
                     type="button"
-                    onClick={() => setDrawMode('None')}
-                    className="rounded-2xl bg-white/5 px-3 py-3 text-sm font-semibold text-slate-100"
+                    onClick={() => {
+                      setDrawMode('None');
+                      if (!activeLayerId && layers[0]?.id) {
+                        setActiveLayerId(layers[0].id);
+                      }
+                      setMarkerModeEnabled(true);
+                      setStatusMessage('Click the map to add a marker to the active layer.');
+                    }}
+                    className={`flex-1 rounded-xl py-2.5 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                      markerModeEnabled
+                        ? 'bg-cyan-400 text-slate-950 shadow-md'
+                        : 'text-slate-300 hover:text-slate-100 hover:bg-white/5'
+                    }`}
                   >
-                    Stop Drawing
+                    <MapPin className="h-3.5 w-3.5" />
+                    <span>Marker</span>
                   </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMarkerModeEnabled(false);
+                      setDrawMode('Polygon');
+                      setStatusMessage('Click the map to draw a polygon area.');
+                    }}
+                    className={`flex-1 rounded-xl py-2.5 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                      drawMode === 'Polygon'
+                        ? 'bg-cyan-400 text-slate-950 shadow-md'
+                        : 'text-slate-300 hover:text-slate-100 hover:bg-white/5'
+                    }`}
+                  >
+                    <PencilLine className="h-3.5 w-3.5" />
+                    <span>Draw</span>
+                  </button>
+                </div>
+
+                {/* Clear drawings button, only shown in Drawing Mode */}
+                {drawMode === 'Polygon' && (
                   <button
                     type="button"
                     onClick={clearDrawings}
-                    className="rounded-2xl bg-white/5 px-3 py-3 text-sm font-semibold text-slate-100"
+                    className="w-full rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2.5 text-xs font-semibold text-slate-200 transition-colors"
                   >
-                    Clear Area
+                    Clear Drawn Area
                   </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!activeLayerId && layers[0]?.id) {
-                      setActiveLayerId(layers[0].id);
-                    }
-                    setStatusMessage('Click the map to add a marker to the active layer.');
-                  }}
-                  className="w-full rounded-2xl bg-white/5 px-3 py-3 text-sm font-semibold text-slate-100"
-                >
-                  Ready to Add Marker
-                </button>
+                )}
+
                 <div className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-xs text-slate-300">
                   <p>Active layer: {layers.find((layer) => layer.id === activeLayerId)?.name || 'None selected'}</p>
                   <p className="mt-1">Tip: create a blank layer first, then add points one by one.</p>
@@ -981,6 +1072,18 @@ function App() {
                 className="rounded-full border border-white/10 bg-slate-950/90 px-4 py-2 text-xs font-semibold text-cyan-200 shadow-2xl shadow-black/30"
               >
                 {selectedCoordinates ? `Selected: ${formatCoordinates(selectedCoordinates)}` : 'Click the map to select a site'}
+              </div>
+              <div
+                ref={hoverTooltipRef}
+                className="pointer-events-none rounded-2xl border border-white/15 bg-slate-950/95 px-4 py-3 text-xs font-medium text-slate-100 shadow-2xl shadow-black/40 backdrop-blur-md transition-all"
+              >
+                {hoveredMarkerInfo && (
+                  <div className="space-y-1">
+                    <p className="font-semibold text-cyan-300 text-sm">{hoveredMarkerInfo.name}</p>
+                    <p className="text-slate-400">Category: <span className="text-slate-200">{hoveredMarkerInfo.category}</span></p>
+                    <p className="text-slate-400">Coords: <span className="text-cyan-100/90">{formatCoordinates(hoveredMarkerInfo.coordinates)}</span></p>
+                  </div>
+                )}
               </div>
               <div className="pointer-events-none absolute left-4 top-4 rounded-2xl border border-white/10 bg-slate-950/75 px-4 py-3 text-xs text-slate-200 shadow-2xl shadow-black/30">
                 <div className="flex items-center gap-2">
