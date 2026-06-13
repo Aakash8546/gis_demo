@@ -1,0 +1,45 @@
+@import "ol/ol.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #102a43;
+  background:
+    radial-gradient(circle at top left, rgba(62, 189, 147, 0.24), transparent 28%),
+    radial-gradient(circle at top right, rgba(247, 179, 43, 0.2), transparent 24%),
+    linear-gradient(180deg, #f7fbff 0%, #eef4fb 100%);
+  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.map-shell .ol-zoom {
+  top: 1rem;
+  right: 1rem;
+  left: auto;
+}
+
+.map-shell .ol-scale-line {
+  left: 1rem;
+  bottom: 1rem;
+  background: rgba(16, 42, 67, 0.78);
+}
+
+.map-shell button {
+  background: #102a43;
+}
+
+.map-shell button:hover {
+  background: #1f4b73;
+}
+

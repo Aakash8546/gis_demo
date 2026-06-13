@@ -1,0 +1,10 @@
+{
+  "type": "FeatureCollection",
+  "name": "hospitals",
+  "features": [
+    { "type": "Feature", "properties": { "name": "Metro Care Hospital" }, "geometry": { "type": "Point", "coordinates": [77.6002, 12.9711] } },
+    { "type": "Feature", "properties": { "name": "Lakeside Clinic" }, "geometry": { "type": "Point", "coordinates": [77.5899, 12.9745] } },
+    { "type": "Feature", "properties": { "name": "Sunrise Medical Center" }, "geometry": { "type": "Point", "coordinates": [77.6064, 12.9673] } }
+  ]
+}
+

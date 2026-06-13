@@ -1,0 +1,46 @@
+{
+  "type": "FeatureCollection",
+  "name": "roads",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Central Corridor", "roadType": "Primary" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.581, 12.968],
+          [77.589, 12.970],
+          [77.596, 12.972],
+          [77.607, 12.976]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "North Connector", "roadType": "Secondary" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.588, 12.982],
+          [77.592, 12.977],
+          [77.598, 12.972],
+          [77.603, 12.966]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Lake Road", "roadType": "Secondary" },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.584, 12.964],
+          [77.591, 12.966],
+          [77.599, 12.968],
+          [77.608, 12.969]
+        ]
+      }
+    }
+  ]
+}
+
