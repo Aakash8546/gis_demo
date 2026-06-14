@@ -12,7 +12,6 @@ import Overlay from 'ol/Overlay';
 import HeatMapLayer from 'ol/layer/Heatmap';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
-
 import { fromLonLat, toLonLat } from 'ol/proj';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import { Fill, Stroke, Style, Circle as CircleStyle, Text } from 'ol/style';
@@ -30,6 +29,10 @@ import {
   PencilLine,
   Plus,
   Trash2,
+  Search,
+  Sun,
+  Moon,
+  Map as MapIcon,
 } from 'lucide-react';
 import {
   countGeometries,
@@ -41,29 +44,44 @@ import {
 } from './utils/spatial';
 
 
+const isRetina = typeof window !== 'undefined' && window.devicePixelRatio > 1;
+const tilePixelRatio = isRetina ? 2 : 1;
+const scale = isRetina ? '@2x' : '';
+
 const BASEMAPS = {
   dark: {
     label: 'Dark Streets',
     source: new XYZ({
-      url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      url: `https://{a-d}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}${scale}.png`,
+      tilePixelRatio: tilePixelRatio,
       attributions: '&copy; OpenStreetMap &copy; CARTO'
     })
   },
   light: {
     label: 'Street Light',
     source: new XYZ({
-      url: 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      url: `https://{a-d}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}${scale}.png`,
+      tilePixelRatio: tilePixelRatio,
       attributions: '&copy; OpenStreetMap &copy; CARTO'
+    })
+  },
+  satellite: {
+    label: 'Satellite',
+    source: new XYZ({
+      url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attributions: '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
     })
   }
 };
 
 
 
-function layerFill(color, alpha = 0.18) {
-  return `${color}${Math.round(alpha * 255)
-    .toString(16)
-    .padStart(2, '0')}`;
+function layerFill(hex, alpha = 0.18) {
+  const cleanHex = hex.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function layerStyleFactory(layer) {
@@ -74,14 +92,14 @@ function layerStyleFactory(layer) {
     const label = layer.labels && name ? name : '';
     const color = layer.color;
 
-    const commonText = new Text({
+    const textStyle = label ? new Text({
       text: label,
       offsetY: -14,
       font: '600 12px Inter, ui-sans-serif, system-ui, sans-serif',
       fill: new Fill({ color: '#f8fafc' }),
       stroke: new Stroke({ color: 'rgba(15, 23, 42, 0.85)', width: 3 }),
       overflow: true
-    });
+    }) : undefined;
 
     if (geometryType === 'Point' || geometryType === 'MultiPoint') {
       return [
@@ -97,7 +115,7 @@ function layerStyleFactory(layer) {
             fill: new Fill({ color }),
             stroke: new Stroke({ color: '#ffffff', width: 1.5 })
           }),
-          text: commonText
+          text: textStyle
         })
       ];
     }
@@ -108,7 +126,7 @@ function layerStyleFactory(layer) {
           color,
           width: 3
         }),
-        text: commonText
+        text: textStyle
       });
     }
 
@@ -120,7 +138,7 @@ function layerStyleFactory(layer) {
       fill: new Fill({
         color: layerFill(color, 0.22)
       }),
-      text: commonText
+      text: textStyle
     });
   };
 }
@@ -159,6 +177,8 @@ function App() {
   const mapElementRef = useRef(null);
   const tooltipRef = useRef(null);
   const mapRef = useRef(null);
+  const selectedPointLayerRef = useRef(null);
+  const highlightLayerRef = useRef(null);
   const drawSourceRef = useRef(new VectorSource());
   const dataLayerRefs = useRef({});
   const selectedPointSourceRef = useRef(new VectorSource());
@@ -166,11 +186,18 @@ function App() {
   const drawInteractionRef = useRef(null);
   const modifyInteractionRef = useRef(null);
   const snapInteractionRef = useRef(null);
-  const basemapLayerRef = useRef(
-    new TileLayer({
-      source: BASEMAPS.dark.source
+  const basemapLayersRef = useRef({
+    dark: new TileLayer({ source: BASEMAPS.dark.source, visible: true }),
+    light: new TileLayer({ source: BASEMAPS.light.source, visible: false }),
+    satellite: new TileLayer({ source: BASEMAPS.satellite.source, visible: false }),
+    satelliteLabels: new TileLayer({
+      source: new XYZ({
+        url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+        attributions: '&copy; Esri &mdash; Sources: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCan, Esri Japan, METI, Esri China (Hong Kong), Esri Korea, Esri (Thailand), NGCC, (c) OpenStreetMap contributors, and the GIS User Community'
+      }),
+      visible: false
     })
-  );
+  });
   const baseSelection = useRef('dark');
 
   const [layers, setLayers] = useState([]);
@@ -190,6 +217,8 @@ function App() {
   const [showHeatmap, setShowHeatmap] = useState(false);
   const showHeatmapRef = useRef(showHeatmap);
   const heatmapLayerRefs = useRef({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [layerDraft, setLayerDraft] = useState({
     name: '',
     color: '#c084fc'
@@ -236,6 +265,33 @@ function App() {
     showHeatmapRef.current = showHeatmap;
   }, [showHeatmap]);
 
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchQuery.trim() || !mapRef.current) return;
+    
+    setIsSearching(true);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const { lon, lat } = data[0];
+        const coords = fromLonLat([parseFloat(lon), parseFloat(lat)]);
+        
+        mapRef.current.getView().animate({
+          center: coords,
+          zoom: 12,
+          duration: 1500
+        });
+      } else {
+        alert("Location not found.");
+      }
+    } catch (err) {
+      console.error("Search error", err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   useEffect(() => {
     if (mapRef.current || !mapElementRef.current || !tooltipRef.current || !hoverTooltipRef.current) {
       return;
@@ -260,12 +316,14 @@ function App() {
       style: highlightStyleFactory()
     });
     highlightLayer.set('kind', 'overlay');
+    highlightLayerRef.current = highlightLayer;
 
     const selectedPointLayer = new VectorLayer({
       source: selectedPointSourceRef.current,
       style: pointMarkerStyle('#60a5fa')
     });
     selectedPointLayer.set('kind', 'overlay');
+    selectedPointLayerRef.current = selectedPointLayer;
 
     const drawLayer = new VectorLayer({
       source: drawSourceRef.current,
@@ -290,25 +348,22 @@ function App() {
     });
     drawLayer.set('kind', 'draw');
 
-
-
-
-
-
-
-
-
-
-const map = new Map({
-    target: mapElementRef.current,
-    layers: [basemapLayerRef.current,highlightLayer, selectedPointLayer, drawLayer],
-      overlays: [tooltipOverlay, hoverTooltipOverlay],
-      controls: defaultControls().extend([new ScaleLine()]),
-      view: new View({
-        center: fromLonLat(mapCenter),
-        zoom: 13
-      })
-    });
+    const map = new Map({
+        target: mapElementRef.current,
+        layers: [
+          basemapLayersRef.current.dark,
+          basemapLayersRef.current.light,
+          basemapLayersRef.current.satellite,
+          basemapLayersRef.current.satelliteLabels,
+          highlightLayer, selectedPointLayer, drawLayer
+        ],
+        overlays: [tooltipOverlay, hoverTooltipOverlay],
+        controls: defaultControls().extend([new ScaleLine()]),
+        view: new View({
+          center: fromLonLat(mapCenter),
+          zoom: 13
+        })
+      });
 
     map.on('pointermove', (event) => {
       const lonLat = toLonLat(event.coordinate);
@@ -373,8 +428,6 @@ const map = new Map({
       }));
 
       if (hit?.feature && hit?.layer?.get('kind') === 'data') {
-        const layerId = hit.layer.get('layerId');
-        const layer = layersRef.current.find((item) => item.id === layerId);
         highlightSourceRef.current.clear();
         const cloned = hit.feature.clone();
         highlightSourceRef.current.addFeature(cloned);
@@ -383,12 +436,14 @@ const map = new Map({
 
         if (featureOnDraw) {
           highlightSourceRef.current.clear();
-          highlightSourceRef.current.addFeature(featureOnDraw.clone());
+          const cloned = featureOnDraw.clone();
+          highlightSourceRef.current.addFeature(cloned);
         }
       }
 
       selectedPointSourceRef.current.clear();
-      selectedPointSourceRef.current.addFeature(new Feature({ geometry: new Point(event.coordinate) }));
+      const geom = new Point(event.coordinate);
+      selectedPointSourceRef.current.addFeature(new Feature({ geometry: geom }));
     });
 
     map.on('click', (event) => {
@@ -415,7 +470,13 @@ const map = new Map({
       return;
     }
 
-    basemapLayerRef.current.setSource(basemap === 'dark' ? BASEMAPS.dark.source : BASEMAPS.light.source);
+    Object.keys(basemapLayersRef.current).forEach(key => {
+      if (key === 'satelliteLabels') {
+        basemapLayersRef.current[key].setVisible(basemap === 'satellite');
+      } else {
+        basemapLayersRef.current[key].setVisible(key === basemap);
+      }
+    });
     baseSelection.current = basemap;
   }, [basemap]);
 
@@ -425,22 +486,30 @@ const map = new Map({
     }
 
     const map = mapRef.current;
-    const currentDataLayers = map
-      .getLayers()
-      .getArray()
-      .filter((layer) => layer.get('kind') === 'data' || layer.get('kind') === 'heatmap');
-    currentDataLayers.forEach((layer) => map.removeLayer(layer));
 
-    dataLayerRefs.current = {};
-    heatmapLayerRefs.current = {};
+    // Get active layer IDs
+    const activeLayerIds = new Set(layers.map(l => l.id));
+
+    // Remove deleted layers from the map and refs
+    Object.keys(dataLayerRefs.current).forEach((id) => {
+      if (!activeLayerIds.has(id)) {
+        map.removeLayer(dataLayerRefs.current[id]);
+        delete dataLayerRefs.current[id];
+      }
+    });
+    Object.keys(heatmapLayerRefs.current).forEach((id) => {
+      if (!activeLayerIds.has(id)) {
+        map.removeLayer(heatmapLayerRefs.current[id]);
+        delete heatmapLayerRefs.current[id];
+      }
+    });
 
     const sortedLayers = [...layers].sort((a, b) => a.order - b.order);
-    sortedLayers.forEach((layer, index) => {
-      const vectorSource = new VectorSource({
-        features: readGeoJsonFeatures(layer.geojson)
-      });
+    const baseLayersCount = 4; // dark, light, satellite, satelliteLabels
 
-      vectorSource.getFeatures().forEach((feature) => {
+    sortedLayers.forEach((layer, index) => {
+      const newFeatures = readGeoJsonFeatures(layer.geojson);
+      newFeatures.forEach((feature) => {
         feature.setProperties(
           {
             __layerId: layer.id,
@@ -450,46 +519,67 @@ const map = new Map({
         );
       });
 
-      const vectorLayer = new VectorLayer({
-        source: vectorSource,
-        opacity: layer.opacity,
-        visible: !showHeatmapRef.current && layer.visible,
-        style: layerStyleFactory(layer)
-      });
+      let vectorLayer = dataLayerRefs.current[layer.id];
+      let heatmapLayer = heatmapLayerRefs.current[layer.id];
 
-      const heatmapLayer = new HeatMapLayer({
-        source: vectorSource,
-        blur: 25,
-        radius: 15,
-        visible: showHeatmapRef.current && layer.visible
-      });
-
-      heatmapLayer.set('kind', 'heatmap');
-      heatmapLayer.set('layerId', layer.id);
-
-      vectorLayer.set('kind', 'data');
-      vectorLayer.set('layerId', layer.id);
-
-      heatmapLayerRefs.current[layer.id] = heatmapLayer;
-      dataLayerRefs.current[layer.id] = vectorLayer;
-      
-      map.getLayers().insertAt(index + 1, vectorLayer);
-      map.getLayers().insertAt(index + 1, heatmapLayer);
-    });
-  }, [layers]);
-
-  useEffect(() => {
-    layersRef.current.forEach((layer) => {
-      const vectorLayer = dataLayerRefs.current[layer.id];
-      const heatmapLayer = heatmapLayerRefs.current[layer.id];
       if (vectorLayer) {
+        vectorLayer.setOpacity(layer.opacity);
         vectorLayer.setVisible(!showHeatmap && layer.visible);
+        vectorLayer.setStyle(layerStyleFactory(layer));
+
+        const source = vectorLayer.getSource();
+        source.clear();
+        source.addFeatures(newFeatures);
+      } else {
+        // Create new vector source and layer
+        const vectorSource = new VectorSource({
+          features: newFeatures
+        });
+        
+        vectorLayer = new VectorLayer({
+          source: vectorSource,
+          opacity: layer.opacity,
+          visible: !showHeatmap && layer.visible,
+          style: layerStyleFactory(layer)
+        });
+        vectorLayer.set('kind', 'data');
+        vectorLayer.set('layerId', layer.id);
+
+        dataLayerRefs.current[layer.id] = vectorLayer;
       }
+
       if (heatmapLayer) {
         heatmapLayer.setVisible(showHeatmap && layer.visible);
+
+        const source = heatmapLayer.getSource();
+        source.clear();
+        source.addFeatures(newFeatures);
+      } else {
+        // Create new heatmap layer
+        const heatmapSource = new VectorSource({
+          features: newFeatures
+        });
+        
+        heatmapLayer = new HeatMapLayer({
+          source: heatmapSource,
+          blur: 25,
+          radius: 15,
+          visible: showHeatmap && layer.visible
+        });
+        heatmapLayer.set('kind', 'heatmap');
+        heatmapLayer.set('layerId', layer.id);
+
+        heatmapLayerRefs.current[layer.id] = heatmapLayer;
       }
+
+      // Ensure layers are at correct indexes for rendering order
+      map.removeLayer(heatmapLayer);
+      map.removeLayer(vectorLayer);
+      
+      map.getLayers().insertAt(baseLayersCount + index * 2, heatmapLayer);
+      map.getLayers().insertAt(baseLayersCount + index * 2 + 1, vectorLayer);
     });
-  }, [showHeatmap]);
+  }, [layers, showHeatmap]);
 
 
   useEffect(() => {
@@ -509,7 +599,7 @@ const map = new Map({
   }, []);
 
   useEffect(() => {
-    const handleDrawChange = () => {
+    const handleDrawChange = (event) => {
       setDrawRevision((current) => current + 1);
     };
 
@@ -565,6 +655,7 @@ const map = new Map({
       mapRef.current.addInteraction(drawInteractionRef.current);
     }
   }, [drawMode]);
+
 
   function updateLayer(layerId, updater) {
     setLayers((current) =>
@@ -690,8 +781,9 @@ const map = new Map({
     }
 
     const name = featureDraft.name.trim() || 'Manual Marker';
+    const geom = new Point(fromLonLat(featureDraft.coordinates));
     const feature = new Feature({
-      geometry: new Point(fromLonLat(featureDraft.coordinates))
+      geometry: geom
     });
     feature.setProperties({
       name,
@@ -1079,24 +1171,59 @@ const map = new Map({
                   Navigate, draw areas, place markers, and manage your spatial data seamlessly.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setBasemap('dark')} type="button" className={`rounded-2xl px-3 py-2 text-xs font-semibold ${basemap === 'dark' ? 'bg-cyan-400 text-slate-950' : 'bg-white/5 text-slate-100'}`}>
-                  Dark
-                </button>
-                <button onClick={() => setBasemap('light')} type="button" className={`rounded-2xl px-3 py-2 text-xs font-semibold ${basemap === 'light' ? 'bg-cyan-400 text-slate-950' : 'bg-white/5 text-slate-100'}`}>
-                  Light
-                </button>
+              <div className="flex flex-wrap gap-2 items-center">
+                <form onSubmit={handleSearch} className="relative flex items-center">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search location..."
+                    className="w-48 rounded-2xl border border-white/10 bg-slate-950/40 px-3 py-1.5 pl-8 text-xs text-white placeholder-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400 transition-all"
+                  />
+                  <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <button type="submit" className="hidden">Search</button>
+                </form>
+                
+
+                {/* Style/Theme Selector */}
+                <div className="flex bg-slate-950/40 border border-white/10 rounded-2xl p-0.5">
+                  <button
+                    onClick={() => setBasemap('light')}
+                    type="button"
+                    className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-xs font-semibold transition-all ${basemap === 'light' ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/25' : 'text-slate-300 hover:text-white'}`}
+                  >
+                    <Sun className="h-3.5 w-3.5" />
+                    Daytime
+                  </button>
+                  <button
+                    onClick={() => setBasemap('dark')}
+                    type="button"
+                    className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-xs font-semibold transition-all ${basemap === 'dark' ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/25' : 'text-slate-300 hover:text-white'}`}
+                  >
+                    <Moon className="h-3.5 w-3.5" />
+                    Nighttime
+                  </button>
+                  <button
+                    onClick={() => setBasemap('satellite')}
+                    type="button"
+                    className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-xs font-semibold transition-all ${basemap === 'satellite' ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/25' : 'text-slate-300 hover:text-white'}`}
+                  >
+                    <Layers3 className="h-3.5 w-3.5" />
+                    Satellite
+                  </button>
+                </div>
+
                 <button
                     onClick={() =>  setShowHeatmap(prev => !prev)}
                     type="button"
-                    className={`rounded-2xl px-3 py-2 text-xs font-semibold ${showHeatmap ? 'bg-amber-400 text-white' : 'bg-white/5 text-slate-100'}`}
+                    className={`rounded-2xl px-3 py-1.5 text-xs font-semibold transition-all ${showHeatmap ? 'bg-amber-400 text-white' : 'bg-white/5 text-slate-100 border border-white/10'}`}
                   >
                     {showHeatmap ? 'Show Markers' : 'Show Heatmap'}
                   </button>
               </div>
             </div>
 
-            <div className="relative h-[72vh] min-h-[660px] map-shell">
+            <div className="relative h-[82vh] min-h-[720px] map-shell">
               <div ref={mapElementRef} className="h-full w-full" />
               <div
                 ref={tooltipRef}
