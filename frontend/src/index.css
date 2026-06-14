@@ -5,18 +5,19 @@
 @tailwind utilities;
 
 :root {
-  color: #102a43;
-  background:
-    radial-gradient(circle at top left, rgba(62, 189, 147, 0.24), transparent 28%),
-    radial-gradient(circle at top right, rgba(247, 179, 43, 0.2), transparent 24%),
-    linear-gradient(180deg, #f7fbff 0%, #eef4fb 100%);
-  font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  color: #0a192f;
+  background: radial-gradient(circle at top left, rgba(0, 242, 254, 0.08), transparent 40%),
+              radial-gradient(circle at bottom right, rgba(255, 183, 3, 0.05), transparent 40%),
+              linear-gradient(135deg, #f0f4f8 0%, #e2e8f0 100%);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {

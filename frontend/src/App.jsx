@@ -9,8 +9,10 @@ import Draw from 'ol/interaction/Draw';
 import Modify from 'ol/interaction/Modify';
 import Snap from 'ol/interaction/Snap';
 import Overlay from 'ol/Overlay';
+import HeatMapLayer from 'ol/layer/Heatmap';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
+
 import { fromLonLat, toLonLat } from 'ol/proj';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import { Fill, Stroke, Style, Circle as CircleStyle, Text } from 'ol/style';
@@ -185,6 +187,9 @@ function App() {
   const [featureDialogError, setFeatureDialogError] = useState('');
   const [markerModeEnabled, setMarkerModeEnabled] = useState(false);
   const [activeLayerId, setActiveLayerId] = useState(null);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const showHeatmapRef = useRef(showHeatmap);
+  const heatmapLayerRefs = useRef({});
   const [layerDraft, setLayerDraft] = useState({
     name: '',
     color: '#c084fc'
@@ -226,6 +231,10 @@ function App() {
   useEffect(() => {
     activeLayerIdRef.current = activeLayerId;
   }, [activeLayerId]);
+
+  useEffect(() => {
+    showHeatmapRef.current = showHeatmap;
+  }, [showHeatmap]);
 
   useEffect(() => {
     if (mapRef.current || !mapElementRef.current || !tooltipRef.current || !hoverTooltipRef.current) {
@@ -281,9 +290,18 @@ function App() {
     });
     drawLayer.set('kind', 'draw');
 
-    const map = new Map({
-      target: mapElementRef.current,
-      layers: [basemapLayerRef.current, highlightLayer, selectedPointLayer, drawLayer],
+
+
+
+
+
+
+
+
+
+const map = new Map({
+    target: mapElementRef.current,
+    layers: [basemapLayerRef.current,highlightLayer, selectedPointLayer, drawLayer],
       overlays: [tooltipOverlay, hoverTooltipOverlay],
       controls: defaultControls().extend([new ScaleLine()]),
       view: new View({
@@ -410,8 +428,11 @@ function App() {
     const currentDataLayers = map
       .getLayers()
       .getArray()
-      .filter((layer) => layer.get('kind') === 'data');
+      .filter((layer) => layer.get('kind') === 'data' || layer.get('kind') === 'heatmap');
     currentDataLayers.forEach((layer) => map.removeLayer(layer));
+
+    dataLayerRefs.current = {};
+    heatmapLayerRefs.current = {};
 
     const sortedLayers = [...layers].sort((a, b) => a.order - b.order);
     sortedLayers.forEach((layer, index) => {
@@ -432,15 +453,44 @@ function App() {
       const vectorLayer = new VectorLayer({
         source: vectorSource,
         opacity: layer.opacity,
-        visible: layer.visible,
+        visible: !showHeatmapRef.current && layer.visible,
         style: layerStyleFactory(layer)
       });
+
+      const heatmapLayer = new HeatMapLayer({
+        source: vectorSource,
+        blur: 25,
+        radius: 15,
+        visible: showHeatmapRef.current && layer.visible
+      });
+
+      heatmapLayer.set('kind', 'heatmap');
+      heatmapLayer.set('layerId', layer.id);
+
       vectorLayer.set('kind', 'data');
       vectorLayer.set('layerId', layer.id);
+
+      heatmapLayerRefs.current[layer.id] = heatmapLayer;
       dataLayerRefs.current[layer.id] = vectorLayer;
-      map.getLayers().insertAt(1 + index, vectorLayer);
+      
+      map.getLayers().insertAt(index + 1, vectorLayer);
+      map.getLayers().insertAt(index + 1, heatmapLayer);
     });
   }, [layers]);
+
+  useEffect(() => {
+    layersRef.current.forEach((layer) => {
+      const vectorLayer = dataLayerRefs.current[layer.id];
+      const heatmapLayer = heatmapLayerRefs.current[layer.id];
+      if (vectorLayer) {
+        vectorLayer.setVisible(!showHeatmap && layer.visible);
+      }
+      if (heatmapLayer) {
+        heatmapLayer.setVisible(showHeatmap && layer.visible);
+      }
+    });
+  }, [showHeatmap]);
+
 
   useEffect(() => {
     const map = mapRef.current;
@@ -708,7 +758,7 @@ function App() {
         <header className="rounded-[28px] border border-white/10 bg-white/6 px-5 py-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.45em] text-cyan-300">AI-Powered WebGIS Decision Support</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.45em] text-cyan-300">Decision Support Platform</p>
               <h1 className="mt-2 text-2xl font-semibold text-white lg:text-3xl">Geo_Insight</h1>
               <p className="mt-2 max-w-4xl text-sm text-slate-300">
                 Advanced Geospatial Intelligence for Planning, Analysis, and AI-Assisted Decision Support
@@ -976,10 +1026,7 @@ function App() {
                   </button>
                 )}
 
-                <div className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-xs text-slate-300">
-                  <p>Active layer: {layers.find((layer) => layer.id === activeLayerId)?.name || 'None selected'}</p>
-                  <p className="mt-1">Tip: create a blank layer first, then add points one by one.</p>
-                </div>
+
               </div>
             </div>
 
@@ -1025,8 +1072,12 @@ function App() {
           <main className="overflow-hidden rounded-[32px] border border-white/10 bg-white/6 shadow-2xl shadow-black/20 backdrop-blur-xl">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">OpenLayers Map</p>
-                <p className="mt-1 text-sm text-slate-200">Pan, zoom, place markers, and inspect your live workspace.</p>
+                <h1 className="text-sm font-bold uppercase tracking-[0.35em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400">
+                   Workspace
+                </h1>
+                <p className="mt-1 text-sm font-medium text-slate-300">
+                  Navigate, draw areas, place markers, and manage your spatial data seamlessly.
+                </p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => setBasemap('dark')} type="button" className={`rounded-2xl px-3 py-2 text-xs font-semibold ${basemap === 'dark' ? 'bg-cyan-400 text-slate-950' : 'bg-white/5 text-slate-100'}`}>
@@ -1035,6 +1086,13 @@ function App() {
                 <button onClick={() => setBasemap('light')} type="button" className={`rounded-2xl px-3 py-2 text-xs font-semibold ${basemap === 'light' ? 'bg-cyan-400 text-slate-950' : 'bg-white/5 text-slate-100'}`}>
                   Light
                 </button>
+                <button
+                    onClick={() =>  setShowHeatmap(prev => !prev)}
+                    type="button"
+                    className={`rounded-2xl px-3 py-2 text-xs font-semibold ${showHeatmap ? 'bg-amber-400 text-white' : 'bg-white/5 text-slate-100'}`}
+                  >
+                    {showHeatmap ? 'Show Markers' : 'Show Heatmap'}
+                  </button>
               </div>
             </div>
 
