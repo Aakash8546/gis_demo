@@ -2,7 +2,9 @@ package com.example.webgis.controller;
 
 import com.example.webgis.model.LayerCatalogResponse;
 import com.example.webgis.service.GeoJsonService;
+import com.example.webgis.service.MbTilesService;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,14 +21,18 @@ import java.util.Map;
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5175",
-        "http://127.0.0.1:5175"
+        "http://127.0.0.1:5175",
+        "http://localhost:5177",
+        "http://127.0.0.1:5177"
 })
 public class GisController {
 
     private final GeoJsonService geoJsonService;
+    private final MbTilesService mbTilesService;
 
-    public GisController(GeoJsonService geoJsonService) {
+    public GisController(GeoJsonService geoJsonService, MbTilesService mbTilesService) {
         this.geoJsonService = geoJsonService;
+        this.mbTilesService = mbTilesService;
     }
 
     @GetMapping("/health")
@@ -42,5 +48,34 @@ public class GisController {
     @GetMapping("/layers/{layerId}")
     public ResponseEntity<JsonNode> getLayer(@PathVariable String layerId) throws IOException {
         return ResponseEntity.ok(geoJsonService.getLayerById(layerId));
+    }
+
+    @GetMapping("/mbtiles/{z}/{x}/{y}")
+    public ResponseEntity<byte[]> getMbTile(@PathVariable int z, @PathVariable int x, @PathVariable int y) {
+        return getMbTileDynamic("varanasi", z, x, y);
+    }
+
+    @GetMapping("/mbtiles/{dbName}/{z}/{x}/{y}")
+    public ResponseEntity<byte[]> getMbTileDynamic(@PathVariable String dbName, @PathVariable int z, @PathVariable int x, @PathVariable int y) {
+        byte[] tileData = mbTilesService.getTile(dbName, z, x, y);
+        if (tileData == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        String format = mbTilesService.getFormat(dbName);
+        if ("pbf".equalsIgnoreCase(format)) {
+            return ResponseEntity.ok()
+                    .contentType(MediaType.parseMediaType("application/x-protobuf"))
+                    .header("Content-Encoding", "gzip")
+                    .body(tileData);
+        }
+
+        MediaType contentType = "jpg".equalsIgnoreCase(format) || "jpeg".equalsIgnoreCase(format)
+                ? MediaType.IMAGE_JPEG
+                : MediaType.IMAGE_PNG;
+
+        return ResponseEntity.ok()
+                .contentType(contentType)
+                .body(tileData);
     }
 }

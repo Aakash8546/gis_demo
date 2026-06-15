@@ -15,12 +15,7 @@ import java.util.List;
 public class GeoJsonService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final List<LayerInfo> layerInfos = List.of(
-            new LayerInfo("shops", "Shops", "shops.geojson"),
-            new LayerInfo("schools", "Schools", "schools.geojson"),
-            new LayerInfo("hospitals", "Hospitals", "hospitals.geojson"),
-            new LayerInfo("roads", "Roads", "roads.geojson")
-    );
+    private final List<LayerInfo> layerInfos = List.of();
 
     public LayerCatalogResponse getLayerCatalog() {
         return new LayerCatalogResponse(layerInfos);

@@ -12,6 +12,11 @@ import Overlay from 'ol/Overlay';
 import HeatMapLayer from 'ol/layer/Heatmap';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
+import LineString from 'ol/geom/LineString';
+import VectorTileLayer from 'ol/layer/VectorTile';
+import VectorTileSource from 'ol/source/VectorTile';
+import MVT from 'ol/format/MVT';
+import { PMTilesVectorSource } from 'ol-pmtiles';
 import { fromLonLat, toLonLat } from 'ol/proj';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import { Fill, Stroke, Style, Circle as CircleStyle, Text } from 'ol/style';
@@ -33,6 +38,7 @@ import {
   Sun,
   Moon,
   Map as MapIcon,
+  Ruler,
 } from 'lucide-react';
 import {
   countGeometries,
@@ -40,7 +46,9 @@ import {
   createLayerMetadata,
   formatCoordinates,
   readGeoJsonFeatures,
-  writeGeoJsonFeatures
+  writeGeoJsonFeatures,
+  calculateLineDistance,
+  calculateDistanceBetweenCoordinates
 } from './utils/spatial';
 
 
@@ -50,29 +58,135 @@ const scale = isRetina ? '@2x' : '';
 
 const BASEMAPS = {
   dark: {
-    label: 'Dark Streets',
-    source: new XYZ({
-      url: `https://{a-d}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}${scale}.png`,
-      tilePixelRatio: tilePixelRatio,
-      attributions: '&copy; OpenStreetMap &copy; CARTO'
-    })
+    label: 'Nighttime (PMTiles)',
+    url: '/varanasi.pmtiles',
+    attributions: 'Protomaps &copy; OpenStreetMap'
   },
   light: {
-    label: 'Street Light',
-    source: new XYZ({
-      url: `https://{a-d}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}${scale}.png`,
-      tilePixelRatio: tilePixelRatio,
-      attributions: '&copy; OpenStreetMap &copy; CARTO'
-    })
+    label: 'Daytime (PMTiles)',
+    url: '/varanasi.pmtiles',
+    attributions: 'Protomaps &copy; OpenStreetMap'
   },
   satellite: {
-    label: 'Satellite',
-    source: new XYZ({
-      url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      attributions: '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
-    })
+    label: 'Satellite (Esri)',
+    url: 'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attributions: '&copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+  },
+  varanasi_mbtiles: {
+    label: 'MBTiles Streets',
+    url: '/api/mbtiles/varanasi/{z}/{x}/{y}',
+    attributions: 'SQLite MBTiles &copy; OpenStreetMap'
   }
 };
+
+function getPmtilesStyle(theme) {
+  const isDark = theme === 'dark';
+  
+  const colors = {
+    water: isDark ? 'rgba(15, 23, 42, 0.75)' : 'rgba(165, 243, 252, 0.65)',
+    waterLine: isDark ? '#1e293b' : '#38bdf8',
+    earth: isDark ? '#0b1329' : '#ebeef2',
+    landuse: isDark ? '#131e36' : '#e2e8f0',
+    park: isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(187, 247, 208, 0.55)',
+    roads: isDark ? '#1e293b' : '#ffffff',
+    roadStroke: isDark ? '#0f172a' : '#cbd5e1',
+    buildings: isDark ? 'rgba(30, 41, 59, 0.5)' : 'rgba(203, 213, 225, 0.65)',
+    buildingStroke: isDark ? '#334155' : '#94a3b8',
+    boundaries: isDark ? '#06b6d4' : '#475569',
+    text: isDark ? '#cbd5e1' : '#0f172a',
+    textHalo: isDark ? 'rgba(15, 23, 42, 0.85)' : 'rgba(235, 238, 242, 0.9)'
+  };
+
+  const styleCache = {};
+
+  return (feature) => {
+    let layer = feature.get('layer');
+    if (layer === 'transportation') layer = 'roads';
+    if (layer === 'transportation_name') layer = 'roads';
+    if (layer === 'building') layer = 'buildings';
+    if (layer === 'place') layer = 'places';
+    if (layer === 'poi') layer = 'pois';
+    if (layer === 'boundary') layer = 'boundaries';
+    if (layer === 'waterway') layer = 'water';
+    if (layer === 'water_name') layer = 'places';
+    if (layer === 'landcover') layer = 'landuse';
+    if (layer === 'park') layer = 'landuse';
+
+    const geometryType = feature.getType();
+    const name = feature.get('name') || '';
+    
+    const key = `${layer}_${geometryType}_${name ? 'L' : 'U'}`;
+    if (styleCache[key]) {
+      return styleCache[key];
+    }
+
+    let style = null;
+
+    if (layer === 'water') {
+      style = new Style({
+        fill: new Fill({ color: colors.water }),
+        stroke: new Stroke({ color: colors.waterLine, width: 1.2 })
+      });
+    } else if (layer === 'roads' || layer === 'transit') {
+      const roadClass = feature.get('class');
+      const isMajor = roadClass === 'motorway' || roadClass === 'trunk' || roadClass === 'primary';
+      style = new Style({
+        stroke: new Stroke({
+          color: isMajor ? colors.boundaries : colors.roads,
+          width: isMajor ? 2.5 : 1.25
+        })
+      });
+    } else if (layer === 'buildings') {
+      style = new Style({
+        fill: new Fill({ color: colors.buildings }),
+        stroke: new Stroke({ color: colors.buildingStroke, width: 0.5 })
+      });
+    } else if (layer === 'boundaries') {
+      style = new Style({
+        stroke: new Stroke({
+          color: colors.boundaries,
+          width: 1.5,
+          lineDash: [4, 4]
+        })
+      });
+    } else if (layer === 'earth' || layer === 'landuse' || layer === 'natural') {
+      const landClass = feature.get('class');
+      const isPark = landClass === 'park' || landClass === 'forest' || landClass === 'wood';
+      style = new Style({
+        fill: new Fill({ color: isPark ? colors.park : colors.landuse })
+      });
+    } else if (layer === 'places' || layer === 'pois') {
+      if (name) {
+        style = new Style({
+          text: new Text({
+            text: name,
+            font: '500 11px Inter, ui-sans-serif, system-ui, sans-serif',
+            fill: new Fill({ color: colors.text }),
+            stroke: new Stroke({ color: colors.textHalo, width: 2.5 }),
+            overflow: true
+          })
+        });
+      }
+    }
+
+    if (!style) {
+      if (geometryType === 'Polygon' || geometryType === 'MultiPolygon') {
+        style = new Style({
+          fill: new Fill({ color: colors.earth })
+        });
+      } else if (geometryType === 'LineString' || geometryType === 'MultiLineString') {
+        style = new Style({
+          stroke: new Stroke({ color: colors.roads, width: 1 })
+        });
+      }
+    }
+
+    if (style) {
+      styleCache[key] = style;
+    }
+    return style;
+  };
+}
 
 
 
@@ -173,6 +287,37 @@ function pointMarkerStyle(color) {
   ];
 }
 
+function distanceMeasureStyle(feature) {
+  const kind = feature.get('kind');
+  if (kind === 'distance-highlight') {
+    return [
+      new Style({
+        image: new CircleStyle({
+          radius: 15,
+          stroke: new Stroke({ color: '#f97316', width: 2, lineDash: [2, 2] }),
+          fill: new Fill({ color: 'rgba(249, 115, 22, 0.15)' })
+        })
+      }),
+      new Style({
+        image: new CircleStyle({
+          radius: 6,
+          fill: new Fill({ color: '#f97316' }),
+          stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+        })
+      })
+    ];
+  } else if (kind === 'distance-line') {
+    return new Style({
+      stroke: new Stroke({
+        color: '#f97316',
+        width: 2.5,
+        lineDash: [6, 6]
+      })
+    });
+  }
+  return null;
+}
+
 function App() {
   const mapElementRef = useRef(null);
   const tooltipRef = useRef(null);
@@ -183,24 +328,65 @@ function App() {
   const dataLayerRefs = useRef({});
   const selectedPointSourceRef = useRef(new VectorSource());
   const highlightSourceRef = useRef(new VectorSource());
+  const distanceMeasureSourceRef = useRef(new VectorSource());
+  const distanceMeasureLayerRef = useRef(null);
   const drawInteractionRef = useRef(null);
   const modifyInteractionRef = useRef(null);
   const snapInteractionRef = useRef(null);
   const basemapLayersRef = useRef({
-    dark: new TileLayer({ source: BASEMAPS.dark.source, visible: true }),
-    light: new TileLayer({ source: BASEMAPS.light.source, visible: false }),
-    satellite: new TileLayer({ source: BASEMAPS.satellite.source, visible: false }),
+    dark: new VectorTileLayer({
+      source: new PMTilesVectorSource({
+        url: BASEMAPS.dark.url,
+        attributions: BASEMAPS.dark.attributions
+      }),
+      style: getPmtilesStyle('dark'),
+      visible: true
+    }),
+    light: new VectorTileLayer({
+      source: new PMTilesVectorSource({
+        url: BASEMAPS.light.url,
+        attributions: BASEMAPS.light.attributions
+      }),
+      style: getPmtilesStyle('light'),
+      visible: false
+    }),
+    satellite: new TileLayer({
+      source: new XYZ({
+        url: BASEMAPS.satellite.url,
+        attributions: BASEMAPS.satellite.attributions
+      }),
+      visible: false
+    }),
     satelliteLabels: new TileLayer({
       source: new XYZ({
         url: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
         attributions: '&copy; Esri &mdash; Sources: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCan, Esri Japan, METI, Esri China (Hong Kong), Esri Korea, Esri (Thailand), NGCC, (c) OpenStreetMap contributors, and the GIS User Community'
       }),
       visible: false
+    }),
+    varanasi_mbtiles: new VectorTileLayer({
+      background: '#ebeef2',
+      source: new VectorTileSource({
+        format: new MVT(),
+        url: BASEMAPS.varanasi_mbtiles.url,
+        attributions: BASEMAPS.varanasi_mbtiles.attributions
+      }),
+      style: getPmtilesStyle('light'),
+      visible: false
+    }),
+    varanasi_pmtiles: new VectorTileLayer({
+      source: new PMTilesVectorSource({
+        url: '/varanasi.pmtiles',
+        attributions: 'Protomaps &copy; OpenStreetMap'
+      }),
+      style: getPmtilesStyle('dark'),
+      visible: false
     })
   });
   const baseSelection = useRef('dark');
 
   const [layers, setLayers] = useState([]);
+  const [selectedMarkersForDistance, setSelectedMarkersForDistance] = useState([]);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
   const [hoverCoordinates, setHoverCoordinates] = useState(null);
   const [drawMode, setDrawMode] = useState('None');
@@ -237,7 +423,7 @@ function App() {
     if (selectedCoordinates) {
       return selectedCoordinates;
     }
-    return [77.5946, 12.9716];
+    return [82.9739, 25.3176];
   }, [selectedCoordinates]);
 
   useEffect(() => {
@@ -270,6 +456,43 @@ function App() {
     if (!searchQuery.trim() || !mapRef.current) return;
     
     setIsSearching(true);
+
+    // Coordinate regex matching (e.g. "25.3176, 82.9739" or "25.3176 82.9739")
+    const coordRegex = /^\s*([+-]?\d+(?:\.\d+)?)\s*[\s,]\s*([+-]?\d+(?:\.\d+)?)\s*$/;
+    const match = searchQuery.match(coordRegex);
+    if (match) {
+      const val1 = parseFloat(match[1]);
+      const val2 = parseFloat(match[2]);
+      
+      // Determine coordinate order using India bounds: Lat [5, 40], Lon [60, 100]
+      let lat, lon;
+      if (val1 >= 5 && val1 <= 40 && val2 >= 60 && val2 <= 100) {
+        lat = val1;
+        lon = val2;
+      } else if (val2 >= 5 && val2 <= 40 && val1 >= 60 && val1 <= 100) {
+        lat = val2;
+        lon = val1;
+      } else {
+        lat = val1;
+        lon = val2;
+      }
+      
+      const coords = fromLonLat([lon, lat]);
+      mapRef.current.getView().animate({
+        center: coords,
+        zoom: 14,
+        duration: 1200
+      });
+      
+      setSelectedCoordinates([lon, lat]);
+      selectedPointSourceRef.current.clear();
+      const geom = new Point(coords);
+      selectedPointSourceRef.current.addFeature(new Feature({ geometry: geom }));
+      
+      setIsSearching(false);
+      return;
+    }
+
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
       const data = await res.json();
@@ -279,7 +502,7 @@ function App() {
         
         mapRef.current.getView().animate({
           center: coords,
-          zoom: 12,
+          zoom: 13,
           duration: 1500
         });
       } else {
@@ -287,6 +510,7 @@ function App() {
       }
     } catch (err) {
       console.error("Search error", err);
+      alert("Search failed. If you are offline, please enter coordinates directly (e.g. '25.3176, 82.9739').");
     } finally {
       setIsSearching(false);
     }
@@ -325,6 +549,13 @@ function App() {
     selectedPointLayer.set('kind', 'overlay');
     selectedPointLayerRef.current = selectedPointLayer;
 
+    const distanceMeasureLayer = new VectorLayer({
+      source: distanceMeasureSourceRef.current,
+      style: distanceMeasureStyle
+    });
+    distanceMeasureLayer.set('kind', 'overlay');
+    distanceMeasureLayerRef.current = distanceMeasureLayer;
+
     const drawLayer = new VectorLayer({
       source: drawSourceRef.current,
       style: (feature) => {
@@ -355,7 +586,9 @@ function App() {
           basemapLayersRef.current.light,
           basemapLayersRef.current.satellite,
           basemapLayersRef.current.satelliteLabels,
-          highlightLayer, selectedPointLayer, drawLayer
+          basemapLayersRef.current.varanasi_mbtiles,
+          basemapLayersRef.current.varanasi_pmtiles,
+          highlightLayer, selectedPointLayer, distanceMeasureLayer, drawLayer
         ],
         overlays: [tooltipOverlay, hoverTooltipOverlay],
         controls: defaultControls().extend([new ScaleLine()]),
@@ -428,6 +661,30 @@ function App() {
       }));
 
       if (hit?.feature && hit?.layer?.get('kind') === 'data') {
+        const geom = hit.feature.getGeometry();
+        if (geom && (geom.getType() === 'Point' || geom.getType() === 'MultiPoint')) {
+          const props = hit.feature.getProperties();
+          const name = props.name || props.title || props.label || 'Unnamed Marker';
+          const layerName = props.category || props.__layerName || 'Unknown Layer';
+          const coords = toLonLat(geom.getCoordinates());
+          const markerId = hit.feature.getId() || `${coords[0]}-${coords[1]}`;
+
+          setSelectedMarkersForDistance((current) => {
+            const exists = current.find(m => m.id === markerId);
+            if (exists) {
+              return current.filter(m => m.id !== markerId);
+            }
+            if (current.length >= 2) {
+              return [{ id: markerId, name, layerName, coordinates: coords }];
+            }
+            return [...current, { id: markerId, name, layerName, coordinates: coords }];
+          });
+          
+          selectedPointSourceRef.current.clear();
+          highlightSourceRef.current.clear();
+          return;
+        }
+
         highlightSourceRef.current.clear();
         const cloned = hit.feature.clone();
         highlightSourceRef.current.addFeature(cloned);
@@ -453,6 +710,7 @@ function App() {
     });
 
     mapRef.current = map;
+    window.map = map;
     map.addInteraction(
       new Modify({
         source: drawSourceRef.current
@@ -485,6 +743,37 @@ function App() {
       return;
     }
 
+    const source = distanceMeasureSourceRef.current;
+    source.clear();
+
+    if (selectedMarkersForDistance.length === 0) {
+      return;
+    }
+
+    // Add highlight rings for selected markers
+    selectedMarkersForDistance.forEach((marker) => {
+      const geom = new Point(fromLonLat(marker.coordinates));
+      const feature = new Feature({ geometry: geom });
+      feature.setProperties({ kind: 'distance-highlight' });
+      source.addFeature(feature);
+    });
+
+    // Add connecting dashed line
+    if (selectedMarkersForDistance.length === 2) {
+      const c1 = fromLonLat(selectedMarkersForDistance[0].coordinates);
+      const c2 = fromLonLat(selectedMarkersForDistance[1].coordinates);
+      const lineGeom = new LineString([c1, c2]);
+      const feature = new Feature({ geometry: lineGeom });
+      feature.setProperties({ kind: 'distance-line' });
+      source.addFeature(feature);
+    }
+  }, [selectedMarkersForDistance]);
+
+  useEffect(() => {
+    if (!mapRef.current) {
+      return;
+    }
+
     const map = mapRef.current;
 
     // Get active layer IDs
@@ -505,7 +794,7 @@ function App() {
     });
 
     const sortedLayers = [...layers].sort((a, b) => a.order - b.order);
-    const baseLayersCount = 4; // dark, light, satellite, satelliteLabels
+    const baseLayersCount = 6; // dark, light, satellite, satelliteLabels, varanasi_mbtiles, varanasi_pmtiles
 
     sortedLayers.forEach((layer, index) => {
       const newFeatures = readGeoJsonFeatures(layer.geojson);
@@ -716,7 +1005,7 @@ function App() {
 
   async function addLayerFromDialog() {
     try {
-      const layerId = `manual-${crypto.randomUUID().slice(0, 8)}`;
+      const layerId = `manual-${Math.random().toString(36).substring(2, 10)}`;
       const layerName = layerDraft.name.trim() || 'Manual Layer';
       const geojson = {
         type: 'FeatureCollection',
@@ -837,6 +1126,19 @@ function App() {
       ['Intersecting Layers', Object.entries(selectedAreaAnalysis.layerCounts).filter(([, count]) => count > 0).length]
     ];
   }, [selectedAreaAnalysis]);
+
+  const markerDistance = useMemo(() => {
+    if (selectedMarkersForDistance.length !== 2) {
+      return null;
+    }
+    const c1 = selectedMarkersForDistance[0].coordinates;
+    const c2 = selectedMarkersForDistance[1].coordinates;
+    const dist = calculateDistanceBetweenCoordinates(c1, c2);
+    if (dist >= 1000) {
+      return `${(dist / 1000).toFixed(2)} km`;
+    }
+    return `${dist.toFixed(0)} meters`;
+  }, [selectedMarkersForDistance]);
 
 
 
@@ -1159,6 +1461,68 @@ function App() {
                 </div>
               )}
             </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-white/6 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
+              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.35em] text-slate-300">
+                <Ruler className="h-4 w-4 text-cyan-300" />
+                Marker Distance
+              </h2>
+
+              <div className="mt-4 space-y-3">
+                {selectedMarkersForDistance.length === 0 ? (
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Click any two markers on the map (across any layers) to calculate the straight-line distance between them.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <div className="rounded-2xl border border-white/5 bg-slate-950/40 p-3">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Marker 1</p>
+                        <p className="mt-1 text-sm font-semibold text-white truncate">
+                          {selectedMarkersForDistance[0].name}
+                        </p>
+                        <p className="text-[11px] text-cyan-300/80 truncate">
+                          Layer: {selectedMarkersForDistance[0].layerName}
+                        </p>
+                      </div>
+
+                      {selectedMarkersForDistance.length === 2 ? (
+                        <>
+                          <div className="rounded-2xl border border-white/5 bg-slate-950/40 p-3">
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Marker 2</p>
+                            <p className="mt-1 text-sm font-semibold text-white truncate">
+                              {selectedMarkersForDistance[1].name}
+                            </p>
+                            <p className="text-[11px] text-cyan-300/80 truncate">
+                              Layer: {selectedMarkersForDistance[1].layerName}
+                            </p>
+                          </div>
+
+                          <div className="rounded-2xl border border-cyan-400/25 bg-cyan-400/5 px-4 py-3.5 text-center shadow-lg">
+                            <p className="text-xs uppercase tracking-[0.25em] text-cyan-300 font-medium">Calculated Distance</p>
+                            <p className="mt-2 text-2xl font-bold text-white tracking-wide">
+                              {markerDistance}
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs text-amber-300/95 italic bg-amber-400/5 border border-amber-400/10 rounded-xl p-2.5">
+                          Select a second marker on the map...
+                        </p>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMarkersForDistance([])}
+                      className="w-full rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2.5 text-xs font-semibold text-slate-200 transition-colors"
+                    >
+                      Clear Selection
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </aside>
 
           <main className="overflow-hidden rounded-[32px] border border-white/10 bg-white/6 shadow-2xl shadow-black/20 backdrop-blur-xl">
@@ -1210,6 +1574,14 @@ function App() {
                   >
                     <Layers3 className="h-3.5 w-3.5" />
                     Satellite
+                  </button>
+                  <button
+                    onClick={() => setBasemap('varanasi_mbtiles')}
+                    type="button"
+                    className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-xs font-semibold transition-all ${basemap === 'varanasi_mbtiles' ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/25' : 'text-slate-300 hover:text-white'}`}
+                  >
+                    <MapIcon className="h-3.5 w-3.5" />
+                    MBTiles
                   </button>
                 </div>
 

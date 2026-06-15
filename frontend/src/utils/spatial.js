@@ -1,5 +1,5 @@
 import GeoJSON from 'ol/format/GeoJSON';
-import { getArea } from 'ol/sphere';
+import { getArea, getLength, getDistance } from 'ol/sphere';
 
 const geojsonFormat = new GeoJSON();
 
@@ -112,4 +112,16 @@ export function analyzeSelectedArea({ polygonFeature, layers }) {
     layerCounts,
     featuresInside
   };
+}
+
+export function calculateLineDistance(lineFeature) {
+  if (!lineFeature) return 0;
+  const geom = lineFeature.getGeometry();
+  if (!geom) return 0;
+  return getLength(geom);
+}
+
+export function calculateDistanceBetweenCoordinates(coord1, coord2) {
+  if (!coord1 || !coord2) return 0;
+  return getDistance(coord1, coord2);
 }
