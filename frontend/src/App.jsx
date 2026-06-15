@@ -419,6 +419,50 @@ function App() {
   const [hoveredMarkerInfo, setHoveredMarkerInfo] = useState(null);
   const hoverTooltipRef = useRef(null);
 
+  const [currentCity, setCurrentCity] = useState('Varanasi');
+  const cityCache = useRef({});
+
+  const updateCityName = useMemo(() => {
+    let timeoutId = null;
+    return (lonLat) => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(async () => {
+        const [lon, lat] = lonLat;
+        // Instant bounding box detection for Varanasi (helps offline and startup)
+        if (lon >= 82.85 && lon <= 83.15 && lat >= 25.20 && lat <= 25.40) {
+          setCurrentCity('Varanasi');
+          return;
+        }
+
+        const cacheKey = `${lon.toFixed(3)}_${lat.toFixed(3)}`;
+        if (cityCache.current[cacheKey]) {
+          setCurrentCity(cityCache.current[cacheKey]);
+          return;
+        }
+
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12`);
+          const data = await res.json();
+          if (data && data.address) {
+            const resolvedCity = data.address.city || 
+                                 data.address.town || 
+                                 data.address.village || 
+                                 data.address.suburb || 
+                                 data.address.city_district || 
+                                 data.address.state_district || 
+                                 data.address.county || 
+                                 'Varanasi';
+            cityCache.current[cacheKey] = resolvedCity;
+            setCurrentCity(resolvedCity);
+          }
+        } catch (err) {
+          console.warn("Reverse geocoding failed, falling back to default.", err);
+        }
+      }, 800);
+    };
+  }, []);
+
+
   const mapCenter = useMemo(() => {
     if (selectedCoordinates) {
       return selectedCoordinates;
@@ -707,6 +751,11 @@ function App() {
       const coordinate = toLonLat(event.coordinate);
       setSelectedCoordinates(coordinate);
       tooltipOverlay.setPosition(event.coordinate);
+    });
+
+    map.on('moveend', () => {
+      const center = toLonLat(map.getView().getCenter());
+      updateCityName(center);
     });
 
     mapRef.current = map;
@@ -1146,486 +1195,498 @@ function App() {
 
   return (
     <>
-    <div className="min-h-screen bg-[#07111f] text-slate-100">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.18),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(168,85,247,0.16),_transparent_26%),linear-gradient(180deg,_#08111d_0%,_#0b1728_55%,_#07111f_100%)]" />
-      <div className="relative z-10 flex min-h-screen flex-col gap-4 p-4 lg:p-6">
-        <header className="rounded-[28px] border border-white/10 bg-white/6 px-5 py-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.45em] text-cyan-300">Decision Support Platform</p>
-              <h1 className="mt-2 text-2xl font-semibold text-white lg:text-3xl">Geo_Insight</h1>
-              <p className="mt-2 max-w-4xl text-sm text-slate-300">
-                Advanced Geospatial Intelligence for Planning, Analysis, and AI-Assisted Decision Support
-              </p>
-            </div>
+    <div className="relative w-screen h-screen overflow-hidden bg-[#07111f] text-slate-100 select-none">
+      {/* Fullscreen Map Canvas */}
+      <div className="absolute inset-0 w-full h-full z-0 map-shell">
+        <div ref={mapElementRef} className="h-full w-full" />
+      </div>
 
-            <div className="flex flex-wrap gap-2 text-xs">
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="uppercase tracking-[0.3em] text-slate-400">Selected</p>
-                <p className="mt-1 text-sm text-white">{formatCoordinates(selectedCoordinates)}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="uppercase tracking-[0.3em] text-slate-400">Active Layer</p>
-                <p className="mt-1 text-sm text-white">{layers.find((layer) => layer.id === activeLayerId)?.name || 'None'}</p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                <p className="uppercase tracking-[0.3em] text-slate-400">Layers</p>
-                <p className="mt-1 text-sm text-white">{totalLayers}</p>
-              </div>
-            </div>
+      {/* Floating Header */}
+      <header className="fixed top-6 left-6 right-6 z-30 flex flex-col md:flex-row md:items-center md:justify-between rounded-[24px] bg-slate-950/70 border border-white/10 shadow-2xl backdrop-blur-xl px-6 py-4 gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-400/20 text-cyan-300">
+            <MapIcon className="h-5 w-5 animate-pulse" />
           </div>
-        </header>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold tracking-wider text-white">Geo_Insight</h1>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.2em] bg-cyan-500/10 text-cyan-300 border border-cyan-400/20 px-2.5 py-0.5 rounded-md">{currentCity}</span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">Decision Support Platform & Spatial Analytics</p>
+          </div>
+        </div>
 
-        <div className="grid flex-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-          <aside className="space-y-4 overflow-hidden">
-            <div className="rounded-[28px] border border-white/10 bg-white/6 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.35em] text-slate-300">
-                  <Layers3 className="h-4 w-4 text-cyan-300" />
-                  Layer Explorer
-                </h2>
-                <button
-                  onClick={openLayerDialog}
-                  type="button"
-                  className="inline-flex items-center gap-2 rounded-2xl bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200"
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Layer
-                </button>
-              </div>
+        {/* Search & Basemap Controls */}
+        <div className="flex flex-wrap items-center gap-3">
+          <form onSubmit={handleSearch} className="relative flex items-center">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search location..."
+              className="w-40 lg:w-56 rounded-2xl border border-white/10 bg-slate-950/50 px-3.5 py-2 pl-9 text-xs text-white placeholder-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400 transition-all shadow-inner"
+            />
+            <Search className="absolute left-3.5 h-3.5 w-3.5 text-slate-400" />
+          </form>
 
-              <div className="space-y-3">
-                {layers.map((layer) => (
-                  <div key={layer.id} className="rounded-3xl border border-white/10 bg-slate-950/55 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <input
-                          value={layer.name}
-                          onChange={(event) =>
-                            updateLayer(layer.id, {
-                              ...layer,
-                              name: event.target.value
-                            })
-                          }
-                          className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none"
-                        />
-                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.2em] text-slate-400">
-                          <span>{layer.sourceType}</span>
-                          <span>{layer.metadata.featureCount} features</span>
-                        </div>
-                        {activeLayerId === layer.id && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setDrawMode('None');
-                              setMarkerModeEnabled((current) => !current);
-                              setStatusMessage(
-                                !markerModeEnabled
-                                  ? `Click the map to add a marker to ${layer.name}.`
-                                  : 'Marker mode disabled.'
-                              );
-                            }}
-                            className={`mt-3 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold border transition-all ${
-                              markerModeEnabled
-                                ? 'bg-cyan-400 text-slate-950 border-cyan-400'
-                                : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
-                            }`}
-                          >
-                            <Plus className="h-3.5 w-3.5" />
-                            {markerModeEnabled ? 'Adding Markers...' : 'Add Marker'}
-                          </button>
-                        )}
+          <div className="flex bg-slate-950/50 border border-white/10 rounded-2xl p-0.5">
+            <button
+              onClick={() => setBasemap('light')}
+              type="button"
+              className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-[11px] font-semibold transition-all ${basemap === 'light' ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/20' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <Sun className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Day</span>
+            </button>
+            <button
+              onClick={() => setBasemap('dark')}
+              type="button"
+              className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-[11px] font-semibold transition-all ${basemap === 'dark' ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/20' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <Moon className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Night</span>
+            </button>
+            <button
+              onClick={() => setBasemap('satellite')}
+              type="button"
+              className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-[11px] font-semibold transition-all ${basemap === 'satellite' ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/20' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <Layers3 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Sat</span>
+            </button>
+            <button
+              onClick={() => setBasemap('varanasi_mbtiles')}
+              type="button"
+              className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-[11px] font-semibold transition-all ${basemap === 'varanasi_mbtiles' ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/20' : 'text-slate-400 hover:text-slate-200'}`}
+            >
+              <MapIcon className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">MBTiles</span>
+            </button>
+          </div>
+
+          <button
+            onClick={() => setShowHeatmap(prev => !prev)}
+            type="button"
+            className={`rounded-2xl px-3.5 py-2 text-[11px] font-semibold border transition-all ${showHeatmap ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20' : 'bg-slate-950/50 text-slate-300 border-white/10 hover:bg-slate-950/80'}`}
+          >
+            {showHeatmap ? 'Show Markers' : 'Show Heatmap'}
+          </button>
+        </div>
+      </header>
+
+      {/* Floating Left Sidebar Panel Wrapper */}
+      <aside className="fixed top-28 left-6 bottom-6 w-[380px] z-30 overflow-y-auto pr-2 flex flex-col gap-4 custom-scrollbar select-none">
+        
+        {/* Layer Explorer Card */}
+        <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+              <Layers3 className="h-4 w-4 text-cyan-400" />
+              Layer Explorer
+            </h2>
+            <button
+              onClick={openLayerDialog}
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-400/10 border border-cyan-400/20 hover:bg-cyan-400/20 px-3 py-1.5 text-xs font-semibold text-cyan-300 transition-all hover:shadow-[0_0_12px_rgba(34,211,238,0.2)]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Create Layer
+            </button>
+          </div>
+
+          <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar">
+            {layers.length === 0 ? (
+              <p className="text-xs text-slate-400 leading-relaxed italic text-center py-4 bg-white/5 border border-white/5 rounded-2xl">
+                No custom layers created. Click "Create Layer" to start manually adding markers.
+              </p>
+            ) : (
+              layers.map((layer) => (
+                <div key={layer.id} className="rounded-2xl border border-white/10 bg-slate-950/80 p-3.5 hover:border-white/20 transition-all">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1">
+                      <input
+                        value={layer.name}
+                        onChange={(event) =>
+                          updateLayer(layer.id, {
+                            ...layer,
+                            name: event.target.value
+                          })
+                        }
+                        className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-400 transition-all font-medium"
+                      />
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.15em] text-slate-400">
+                        <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">{layer.sourceType}</span>
+                        <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">{layer.metadata.featureCount} features</span>
                       </div>
-                      <div className="flex flex-col gap-2">
+                      {activeLayerId === layer.id && (
                         <button
                           type="button"
-                          onClick={() => setActiveLayerId(layer.id)}
-                          className={`rounded-xl border px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${
-                            activeLayerId === layer.id
-                              ? 'border-cyan-400 bg-cyan-400/15 text-cyan-200'
-                              : 'border-white/10 bg-white/5 text-slate-300'
+                          onClick={() => {
+                            setDrawMode('None');
+                            setMarkerModeEnabled((current) => !current);
+                            setStatusMessage(
+                              !markerModeEnabled
+                                ? `Click the map to add a marker to ${layer.name}.`
+                                : 'Marker mode disabled.'
+                            );
+                          }}
+                          className={`mt-3 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-semibold border transition-all ${
+                            markerModeEnabled
+                              ? 'bg-cyan-400 text-slate-950 border-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.35)]'
+                              : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
                           }`}
                         >
-                          {activeLayerId === layer.id ? 'Active' : 'Use'}
+                          <Plus className="h-3.5 w-3.5" />
+                          {markerModeEnabled ? 'Adding Markers...' : 'Add Marker'}
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => updateLayer(layer.id, { ...layer, visible: !layer.visible })}
-                          className="rounded-xl border border-white/10 bg-white/5 p-2"
-                        >
-                          {layer.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeLayer(layer.id)}
-                          className="rounded-xl border border-white/10 bg-white/5 p-2 text-rose-300"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
+                      )}
                     </div>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveLayerId(layer.id)}
+                        className={`rounded-xl border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.15em] transition-all ${
+                          activeLayerId === layer.id
+                            ? 'border-cyan-400 bg-cyan-400/15 text-cyan-300'
+                            : 'border-white/10 bg-white/5 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {activeLayerId === layer.id ? 'Active' : 'Use'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateLayer(layer.id, { ...layer, visible: !layer.visible })}
+                        className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                      >
+                        {layer.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeLayer(layer.id)}
+                        className="rounded-xl border border-white/10 bg-white/5 p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <label className="text-xs text-slate-300">
-                        Color
-                        <input
-                          type="color"
-                          value={layer.color}
-                          onChange={(event) =>
-                            updateLayer(layer.id, {
-                              ...layer,
-                              color: event.target.value
-                            })
-                          }
-                          className="mt-2 h-10 w-full rounded-xl border border-white/10 bg-transparent"
-                        />
-                      </label>
-                      <label className="text-xs text-slate-300">
-                        Opacity
-                        <input
-                          type="range"
-                          min="0.2"
-                          max="1"
-                          step="0.05"
-                          value={layer.opacity}
-                          onChange={(event) =>
-                            updateLayer(layer.id, {
-                              ...layer,
-                              opacity: Number(event.target.value)
-                            })
-                          }
-                          className="mt-3 w-full accent-cyan-400"
-                        />
-                      </label>
-                    </div>
+                  <div className="mt-3.5 grid grid-cols-2 gap-3 border-t border-white/5 pt-3">
+                    <label className="text-[11px] text-slate-400 uppercase tracking-[0.1em]">
+                      Color
+                      <input
+                        type="color"
+                        value={layer.color}
+                        onChange={(event) =>
+                          updateLayer(layer.id, {
+                            ...layer,
+                            color: event.target.value
+                          })
+                        }
+                        className="mt-1.5 h-8 w-full rounded-xl border border-white/10 bg-transparent cursor-pointer"
+                      />
+                    </label>
+                    <label className="text-[11px] text-slate-400 uppercase tracking-[0.1em]">
+                      Opacity
+                      <input
+                        type="range"
+                        min="0.2"
+                        max="1"
+                        step="0.05"
+                        value={layer.opacity}
+                        onChange={(event) =>
+                          updateLayer(layer.id, {
+                            ...layer,
+                            opacity: Number(event.target.value)
+                          })
+                        }
+                        className="mt-3.5 w-full accent-cyan-400 cursor-pointer"
+                      />
+                    </label>
+                  </div>
 
-                    <div className="mt-3 flex items-center justify-between gap-2">
-                      <label className="flex items-center gap-2 text-xs text-slate-300">
-                        <input
-                          type="checkbox"
-                          checked={layer.labels}
-                          onChange={(event) =>
-                            updateLayer(layer.id, {
-                              ...layer,
-                              labels: event.target.checked
-                            })
-                          }
-                        />
-                        Labels
-                      </label>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => moveLayer(layer.id, -1)}
-                          className="rounded-xl border border-white/10 bg-white/5 p-2"
-                        >
-                          <ArrowUp className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => moveLayer(layer.id, 1)}
-                          className="rounded-xl border border-white/10 bg-white/5 p-2"
-                        >
-                          <ArrowDown className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => zoomToLayer(layer.id)}
-                          className="rounded-xl border border-white/10 bg-white/5 p-2"
-                        >
-                          <LocateFixed className="h-4 w-4" />
-                        </button>
-                      </div>
+                  <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-white/5 pt-3">
+                    <label className="flex items-center gap-2 text-[11px] text-slate-300 uppercase tracking-[0.1em] cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={layer.labels}
+                        onChange={(event) =>
+                          updateLayer(layer.id, {
+                            ...layer,
+                            labels: event.target.checked
+                          })
+                        }
+                        className="rounded border-white/10 bg-slate-900 text-cyan-400 focus:ring-0 cursor-pointer"
+                      />
+                      Labels
+                    </label>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => moveLayer(layer.id, -1)}
+                        className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                        title="Move layer up"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveLayer(layer.id, 1)}
+                        className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                        title="Move layer down"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => zoomToLayer(layer.id)}
+                        className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                        title="Zoom to layer bounds"
+                      >
+                        <LocateFixed className="h-3.5 w-3.5" />
+                      </button>
                     </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Manual Editing Card */}
+        <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
+          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+            <PencilLine className="h-4 w-4 text-cyan-400" />
+            Manual Editing
+          </h2>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Select a mode to interact with the map. Place point markers in custom layers or draw area polygons to calculate stats.
+          </p>
+          
+          {/* Mode Selector */}
+          <div className="flex rounded-2xl bg-slate-900/65 p-1 border border-white/5 shadow-inner mt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setMarkerModeEnabled(false);
+                setDrawMode('None');
+                setStatusMessage('Navigation mode active. Pan, zoom, and select sites.');
+              }}
+              className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                !markerModeEnabled && drawMode === 'None'
+                  ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+              }`}
+            >
+              <Navigation className="h-3.5 w-3.5" />
+              <span>Navigate</span>
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => {
+                setDrawMode('None');
+                if (!activeLayerId && layers[0]?.id) {
+                  setActiveLayerId(layers[0].id);
+                }
+                setMarkerModeEnabled(true);
+                setStatusMessage('Click the map to add a marker to the active layer.');
+              }}
+              className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                markerModeEnabled
+                  ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+              }`}
+            >
+              <MapPin className="h-3.5 w-3.5" />
+              <span>Marker</span>
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => {
+                setMarkerModeEnabled(false);
+                setDrawMode('Polygon');
+                setStatusMessage('Click the map to draw a polygon area.');
+              }}
+              className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                drawMode === 'Polygon'
+                  ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+              }`}
+            >
+              <PencilLine className="h-3.5 w-3.5" />
+              <span>Draw</span>
+            </button>
+          </div>
+
+          {/* Clear drawings button, only shown in Drawing Mode */}
+          {drawMode === 'Polygon' && (
+            <button
+              type="button"
+              onClick={clearDrawings}
+              className="w-full rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors"
+            >
+              Clear Drawn Area
+            </button>
+          )}
+        </div>
+
+        {/* Selected Area Card */}
+        <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
+          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+            <PencilLine className="h-4 w-4 text-cyan-400" />
+            Selected Area
+          </h2>
+
+          {selectedAreaAnalysis ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                {areaMetrics?.map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2">
+                    <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">{label}</p>
+                    <p className="mt-0.5 text-xs font-bold text-white">{value}</p>
                   </div>
                 ))}
               </div>
-            </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-white/6 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
-              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.35em] text-slate-300">
-                <PencilLine className="h-4 w-4 text-cyan-300" />
-                Manual Editing
-              </h2>
-              <div className="mt-4 space-y-3">
-                <p className="text-sm text-slate-300">
-                  Select a mode to navigate the map, place point markers, or draw area polygons.
-                </p>
-                
-                {/* Mode Selector */}
-                <div className="flex rounded-2xl bg-white/5 p-1 border border-white/5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMarkerModeEnabled(false);
-                      setDrawMode('None');
-                      setStatusMessage('Navigation mode active. Pan, zoom, and select sites.');
-                    }}
-                    className={`flex-1 rounded-xl py-2.5 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                      !markerModeEnabled && drawMode === 'None'
-                        ? 'bg-cyan-400 text-slate-950 shadow-md'
-                        : 'text-slate-300 hover:text-slate-100 hover:bg-white/5'
-                    }`}
-                  >
-                    <Navigation className="h-3.5 w-3.5" />
-                    <span>Navigate</span>
-                  </button>
-                  
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDrawMode('None');
-                      if (!activeLayerId && layers[0]?.id) {
-                        setActiveLayerId(layers[0].id);
-                      }
-                      setMarkerModeEnabled(true);
-                      setStatusMessage('Click the map to add a marker to the active layer.');
-                    }}
-                    className={`flex-1 rounded-xl py-2.5 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                      markerModeEnabled
-                        ? 'bg-cyan-400 text-slate-950 shadow-md'
-                        : 'text-slate-300 hover:text-slate-100 hover:bg-white/5'
-                    }`}
-                  >
-                    <MapPin className="h-3.5 w-3.5" />
-                    <span>Marker</span>
-                  </button>
-                  
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMarkerModeEnabled(false);
-                      setDrawMode('Polygon');
-                      setStatusMessage('Click the map to draw a polygon area.');
-                    }}
-                    className={`flex-1 rounded-xl py-2.5 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                      drawMode === 'Polygon'
-                        ? 'bg-cyan-400 text-slate-950 shadow-md'
-                        : 'text-slate-300 hover:text-slate-100 hover:bg-white/5'
-                    }`}
-                  >
-                    <PencilLine className="h-3.5 w-3.5" />
-                    <span>Draw</span>
-                  </button>
+              <div className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2 text-xs text-slate-300">
+                <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Features Inside</p>
+                <div className="mt-2 space-y-2 max-h-[16vh] overflow-y-auto pr-1 custom-scrollbar">
+                  {selectedAreaAnalysis.featuresInside.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 italic text-center py-1">No features found inside area.</p>
+                  ) : (
+                    selectedAreaAnalysis.featuresInside.slice(0, 10).map((item, index) => (
+                      <div key={`${item.layerId}-${item.name}-${index}`} className="rounded-lg bg-white/5 px-2.5 py-1.5 border border-white/5">
+                        <p className="text-xs font-semibold text-white truncate">{item.name}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {item.layerName} · {item.geometryType}
+                        </p>
+                      </div>
+                    ))
+                  )}
                 </div>
-
-                {/* Clear drawings button, only shown in Drawing Mode */}
-                {drawMode === 'Polygon' && (
-                  <button
-                    type="button"
-                    onClick={clearDrawings}
-                    className="w-full rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2.5 text-xs font-semibold text-slate-200 transition-colors"
-                  >
-                    Clear Drawn Area
-                  </button>
-                )}
-
-
               </div>
             </div>
+          ) : (
+            <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3 text-xs text-slate-400 italic leading-relaxed text-center">
+              Draw a polygon on the map using "Draw" mode to inspect features in a custom area.
+            </div>
+          )}
+        </div>
 
-            <div className="rounded-[28px] border border-white/10 bg-white/6 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
-              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.35em] text-slate-300">
-                <PencilLine className="h-4 w-4 text-cyan-300" />
-                Selected Area
-              </h2>
+        {/* Marker Distance Card */}
+        <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
+          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+            <Ruler className="h-4 w-4 text-cyan-400" />
+            Marker Distance
+          </h2>
 
-              {selectedAreaAnalysis ? (
-                <div className="mt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    {areaMetrics?.map(([label, value]) => (
-                      <div key={label} className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3">
-                        <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">{label}</p>
-                        <p className="mt-1 text-sm font-semibold text-white">{value}</p>
-                      </div>
-                    ))}
+          <div className="space-y-3">
+            {selectedMarkersForDistance.length === 0 ? (
+              <p className="text-xs text-slate-400 leading-relaxed italic text-center py-2">
+                Select any two markers across layers to measure geodesic distance.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="space-y-2">
+                  <div className="rounded-xl border border-white/5 bg-slate-900/50 p-2.5 flex items-center justify-between">
+                    <div className="truncate flex-1 pr-2">
+                      <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Marker 1</p>
+                      <p className="text-xs font-bold text-white truncate">
+                        {selectedMarkersForDistance[0].name}
+                      </p>
+                    </div>
+                    <span className="text-[9px] uppercase font-semibold text-cyan-300/80 bg-cyan-400/10 px-2 py-0.5 rounded border border-cyan-400/10 max-w-[120px] truncate">
+                      {selectedMarkersForDistance[0].layerName}
+                    </span>
                   </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
-                    <p className="text-[11px] uppercase tracking-[0.25em] text-slate-400">Features Inside</p>
-                    <div className="mt-2 space-y-2">
-                      {selectedAreaAnalysis.featuresInside.slice(0, 5).map((item, index) => (
-                        <div key={`${item.layerId}-${item.name}-${index}`} className="rounded-xl bg-white/5 px-3 py-2">
-                          <p className="text-sm font-semibold text-white">{item.name}</p>
-                          <p className="text-xs text-slate-400">
-                            {item.layerName} · {item.geometryType}
+                  {selectedMarkersForDistance.length === 2 ? (
+                    <>
+                      <div className="rounded-xl border border-white/5 bg-slate-900/50 p-2.5 flex items-center justify-between">
+                        <div className="truncate flex-1 pr-2">
+                          <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Marker 2</p>
+                          <p className="text-xs font-bold text-white truncate">
+                            {selectedMarkersForDistance[1].name}
                           </p>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/55 px-4 py-3 text-sm text-slate-300">
-                  Draw a polygon on the map to see the selected area summary.
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-[28px] border border-white/10 bg-white/6 p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
-              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.35em] text-slate-300">
-                <Ruler className="h-4 w-4 text-cyan-300" />
-                Marker Distance
-              </h2>
-
-              <div className="mt-4 space-y-3">
-                {selectedMarkersForDistance.length === 0 ? (
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Click any two markers on the map (across any layers) to calculate the straight-line distance between them.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      <div className="rounded-2xl border border-white/5 bg-slate-950/40 p-3">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Marker 1</p>
-                        <p className="mt-1 text-sm font-semibold text-white truncate">
-                          {selectedMarkersForDistance[0].name}
-                        </p>
-                        <p className="text-[11px] text-cyan-300/80 truncate">
-                          Layer: {selectedMarkersForDistance[0].layerName}
-                        </p>
+                        <span className="text-[9px] uppercase font-semibold text-cyan-300/80 bg-cyan-400/10 px-2 py-0.5 rounded border border-cyan-400/10 max-w-[120px] truncate">
+                          {selectedMarkersForDistance[1].layerName}
+                        </span>
                       </div>
 
-                      {selectedMarkersForDistance.length === 2 ? (
-                        <>
-                          <div className="rounded-2xl border border-white/5 bg-slate-950/40 p-3">
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Marker 2</p>
-                            <p className="mt-1 text-sm font-semibold text-white truncate">
-                              {selectedMarkersForDistance[1].name}
-                            </p>
-                            <p className="text-[11px] text-cyan-300/80 truncate">
-                              Layer: {selectedMarkersForDistance[1].layerName}
-                            </p>
-                          </div>
-
-                          <div className="rounded-2xl border border-cyan-400/25 bg-cyan-400/5 px-4 py-3.5 text-center shadow-lg">
-                            <p className="text-xs uppercase tracking-[0.25em] text-cyan-300 font-medium">Calculated Distance</p>
-                            <p className="mt-2 text-2xl font-bold text-white tracking-wide">
-                              {markerDistance}
-                            </p>
-                          </div>
-                        </>
-                      ) : (
-                        <p className="text-xs text-amber-300/95 italic bg-amber-400/5 border border-amber-400/10 rounded-xl p-2.5">
-                          Select a second marker on the map...
+                      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-center shadow-lg">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-300 font-semibold">Geodesic Distance</p>
+                        <p className="mt-1 text-xl font-bold text-white tracking-wide">
+                          {markerDistance}
                         </p>
-                      )}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-[11px] text-amber-300/90 italic bg-amber-400/5 border border-amber-400/10 rounded-xl p-2.5 text-center animate-pulse">
+                      Select a second marker on the map...
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setSelectedMarkersForDistance([])}
-                      className="w-full rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2.5 text-xs font-semibold text-slate-200 transition-colors"
-                    >
-                      Clear Selection
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </aside>
-
-          <main className="overflow-hidden rounded-[32px] border border-white/10 bg-white/6 shadow-2xl shadow-black/20 backdrop-blur-xl">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-              <div>
-                <h1 className="text-sm font-bold uppercase tracking-[0.35em] text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-emerald-400">
-                   Workspace
-                </h1>
-                <p className="mt-1 text-sm font-medium text-slate-300">
-                  Navigate, draw areas, place markers, and manage your spatial data seamlessly.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2 items-center">
-                <form onSubmit={handleSearch} className="relative flex items-center">
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search location..."
-                    className="w-48 rounded-2xl border border-white/10 bg-slate-950/40 px-3 py-1.5 pl-8 text-xs text-white placeholder-slate-400 focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400 transition-all"
-                  />
-                  <Search className="absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
-                  <button type="submit" className="hidden">Search</button>
-                </form>
-                
-
-                {/* Style/Theme Selector */}
-                <div className="flex bg-slate-950/40 border border-white/10 rounded-2xl p-0.5">
-                  <button
-                    onClick={() => setBasemap('light')}
-                    type="button"
-                    className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-xs font-semibold transition-all ${basemap === 'light' ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/25' : 'text-slate-300 hover:text-white'}`}
-                  >
-                    <Sun className="h-3.5 w-3.5" />
-                    Daytime
-                  </button>
-                  <button
-                    onClick={() => setBasemap('dark')}
-                    type="button"
-                    className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-xs font-semibold transition-all ${basemap === 'dark' ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/25' : 'text-slate-300 hover:text-white'}`}
-                  >
-                    <Moon className="h-3.5 w-3.5" />
-                    Nighttime
-                  </button>
-                  <button
-                    onClick={() => setBasemap('satellite')}
-                    type="button"
-                    className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-xs font-semibold transition-all ${basemap === 'satellite' ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/25' : 'text-slate-300 hover:text-white'}`}
-                  >
-                    <Layers3 className="h-3.5 w-3.5" />
-                    Satellite
-                  </button>
-                  <button
-                    onClick={() => setBasemap('varanasi_mbtiles')}
-                    type="button"
-                    className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-xs font-semibold transition-all ${basemap === 'varanasi_mbtiles' ? 'bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-400/25' : 'text-slate-300 hover:text-white'}`}
-                  >
-                    <MapIcon className="h-3.5 w-3.5" />
-                    MBTiles
-                  </button>
+                  )}
                 </div>
 
                 <button
-                    onClick={() =>  setShowHeatmap(prev => !prev)}
-                    type="button"
-                    className={`rounded-2xl px-3 py-1.5 text-xs font-semibold transition-all ${showHeatmap ? 'bg-amber-400 text-white' : 'bg-white/5 text-slate-100 border border-white/10'}`}
-                  >
-                    {showHeatmap ? 'Show Markers' : 'Show Heatmap'}
-                  </button>
+                  type="button"
+                  onClick={() => setSelectedMarkersForDistance([])}
+                  className="w-full rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors"
+                >
+                  Clear Distance Selection
+                </button>
               </div>
-            </div>
+            )}
+          </div>
+        </div>
+      </aside>
 
-            <div className="relative h-[82vh] min-h-[720px] map-shell">
-              <div ref={mapElementRef} className="h-full w-full" />
-              <div
-                ref={tooltipRef}
-                className="rounded-full border border-white/10 bg-slate-950/90 px-4 py-2 text-xs font-semibold text-cyan-200 shadow-2xl shadow-black/30"
-              >
-                {selectedCoordinates ? `Selected: ${formatCoordinates(selectedCoordinates)}` : 'Click the map to select a site'}
-              </div>
-              <div
-                ref={hoverTooltipRef}
-                className="pointer-events-none rounded-2xl border border-white/15 bg-slate-950/95 px-4 py-3 text-xs font-medium text-slate-100 shadow-2xl shadow-black/40 backdrop-blur-md transition-all"
-              >
-                {hoveredMarkerInfo && (
-                  <div className="space-y-1">
-                    <p className="font-semibold text-cyan-300 text-sm">{hoveredMarkerInfo.name}</p>
-                    <p className="text-slate-400">Category: <span className="text-slate-200">{hoveredMarkerInfo.category}</span></p>
-                    <p className="text-slate-400">Coords: <span className="text-cyan-100/90">{formatCoordinates(hoveredMarkerInfo.coordinates)}</span></p>
-                  </div>
-                )}
-              </div>
-              <div className="pointer-events-none absolute left-4 top-4 rounded-2xl border border-white/10 bg-slate-950/75 px-4 py-3 text-xs text-slate-200 shadow-2xl shadow-black/30">
-                <div className="flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-cyan-300" />
-                  Live coordinates: {formatCoordinates(hoverCoordinates)}
-                </div>
-              </div>
-            </div>
-          </main>
+      {/* Floating coordinates and status indicators at bottom right */}
+      <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-2 pointer-events-none select-none">
+        {/* Live coordinates */}
+        <div className="pointer-events-auto rounded-2xl border border-white/10 bg-slate-950/75 px-4 py-2 text-[11px] text-slate-200 shadow-2xl shadow-black/30 backdrop-blur-xl flex items-center gap-2 font-mono">
+          <Activity className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
+          <span>Live: {formatCoordinates(hoverCoordinates)}</span>
+        </div>
+        {/* Selected Coordinates info */}
+        {selectedCoordinates && (
+          <div className="pointer-events-auto rounded-2xl border border-white/10 bg-slate-950/85 px-4 py-2 text-[11px] text-slate-200 shadow-2xl shadow-black/30 backdrop-blur-xl flex items-center gap-2 font-mono">
+            <CircleDot className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Selected: {formatCoordinates(selectedCoordinates)}</span>
+          </div>
+        )}
+      </div>
 
+      {/* Programmatic Tooltip Overlays (OpenLayers) */}
+      <div className="hidden">
+        <div
+          ref={tooltipRef}
+          className="rounded-full border border-white/10 bg-slate-950/90 px-4 py-2 text-xs font-semibold text-cyan-200 shadow-2xl shadow-black/30"
+        >
+          {selectedCoordinates ? `Selected: ${formatCoordinates(selectedCoordinates)}` : 'Click the map to select a site'}
+        </div>
+        <div
+          ref={hoverTooltipRef}
+          className="pointer-events-none rounded-2xl border border-white/15 bg-slate-950/95 px-4 py-3 text-xs font-medium text-slate-100 shadow-2xl shadow-black/40 backdrop-blur-md transition-all"
+        >
+          {hoveredMarkerInfo && (
+            <div className="space-y-1">
+              <p className="font-semibold text-cyan-300 text-sm">{hoveredMarkerInfo.name}</p>
+              <p className="text-slate-400">Category: <span className="text-slate-200">{hoveredMarkerInfo.category}</span></p>
+              <p className="text-slate-400">Coords: <span className="text-cyan-100/90">{formatCoordinates(hoveredMarkerInfo.coordinates)}</span></p>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Floating Status Message Toast/Notification */}
+      {statusMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-md pointer-events-auto rounded-full border border-cyan-500/30 bg-slate-950/90 px-5 py-2.5 text-xs font-semibold text-cyan-200 shadow-2xl shadow-cyan-500/5 backdrop-blur-xl flex items-center gap-2.5 status-pulse select-none">
+          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />
+          <span>{statusMessage}</span>
+        </div>
+      )}
     </div>
 
     {featureDialogOpen ? (

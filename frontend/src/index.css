@@ -18,59 +18,111 @@ body {
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #07111f;
 }
 
 #root {
   min-height: 100vh;
 }
 
+/* Custom premium scrollbar for floating sidebar and panels */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.3);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+/* Floating map zoom controls */
 .map-shell .ol-zoom {
-  top: 1rem;
-  right: 1rem;
+  top: 7rem; /* lower to clear the floating header */
+  right: 1.5rem;
   left: auto;
-  background: rgba(15, 23, 42, 0.65);
-  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.7);
+  border-radius: 14px;
   padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(16px);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  z-index: 30;
 }
 
 .map-shell .ol-zoom button {
   background: transparent;
   color: #22d3ee;
-  font-size: 1.15rem;
-  font-weight: 600;
-  width: 2rem;
-  height: 2rem;
-  border-radius: 8px;
-  transition: all 0.2s ease;
+  font-size: 1.25rem;
+  font-weight: 500;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 10px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .map-shell .ol-zoom button:hover {
   background: rgba(34, 211, 238, 0.2);
   color: #ffffff;
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.3);
 }
 
+/* Floating scale line control */
 .map-shell .ol-scale-line {
-  left: 1rem;
-  bottom: 1rem;
+  left: 25.5rem; /* position past the 380px left sidebar + padding */
+  bottom: 1.5rem;
   background: rgba(15, 23, 42, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   padding: 6px 12px;
   border-radius: 12px;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+  z-index: 30;
 }
 
 .map-shell .ol-scale-line-inner {
-  border: 1px solid #22d3ee;
+  border: 1.5px solid #22d3ee;
   border-top: none;
   color: #f1f5f9;
   font-family: inherit;
-  font-weight: 500;
+  font-weight: 600;
   font-size: 10px;
+  letter-spacing: 0.05em;
 }
+
+/* Subtle pulse border animation for active features or status updates */
+@keyframes border-pulse {
+  0%, 100% {
+    border-color: rgba(34, 211, 238, 0.2);
+  }
+  50% {
+    border-color: rgba(34, 211, 238, 0.6);
+  }
+}
+
+.status-pulse {
+  animation: border-pulse 2.5s infinite ease-in-out;
+}
+
