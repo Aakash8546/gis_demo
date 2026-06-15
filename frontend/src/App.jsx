@@ -39,6 +39,8 @@ import {
   Moon,
   Map as MapIcon,
   Ruler,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import {
   countGeometries,
@@ -421,6 +423,26 @@ function App() {
 
   const [currentCity, setCurrentCity] = useState('Varanasi');
   const cityCache = useRef({});
+
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   const updateCityName = useMemo(() => {
     let timeoutId = null;
@@ -1270,6 +1292,15 @@ function App() {
             className={`rounded-2xl px-3.5 py-2 text-[11px] font-semibold border transition-all ${showHeatmap ? 'bg-amber-500 border-amber-500 text-white shadow-lg shadow-amber-500/20' : 'bg-slate-950/50 text-slate-300 border-white/10 hover:bg-slate-950/80'}`}
           >
             {showHeatmap ? 'Show Markers' : 'Show Heatmap'}
+          </button>
+
+          <button
+            onClick={toggleFullscreen}
+            type="button"
+            className="flex items-center justify-center rounded-2xl bg-slate-950/50 text-slate-300 border border-white/10 hover:bg-slate-950/80 p-2.5 transition-all hover:text-white hover:border-white/25 hover:shadow-[0_0_12px_rgba(255,255,255,0.05)]"
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </button>
         </div>
       </header>
