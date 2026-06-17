@@ -1,5 +1,6 @@
 import GeoJSON from 'ol/format/GeoJSON';
 import { getArea, getLength, getDistance } from 'ol/sphere';
+import { toLonLat } from 'ol/proj';
 
 const geojsonFormat = new GeoJSON();
 
@@ -124,4 +125,56 @@ export function calculateLineDistance(lineFeature) {
 export function calculateDistanceBetweenCoordinates(coord1, coord2) {
   if (!coord1 || !coord2) return 0;
   return getDistance(coord1, coord2);
+}
+
+export function isPointInPolygon(point, polygonCoords) {
+  if (!polygonCoords || polygonCoords.length === 0) return false;
+  const x = point[0];
+  const y = point[1];
+  const ring = polygonCoords[0];
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    
+    const intersect = ((yi > y) !== (yj > y))
+        && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export function getPolygonMetrics(polygonFeature) {
+  if (!polygonFeature) return null;
+  const geom = polygonFeature.getGeometry();
+  if (!geom) return null;
+
+  const areaSquareMeters = getArea(geom);
+  
+  const geom4326 = geom.clone().transform('EPSG:3857', 'EPSG:4326');
+  const polygonCoords = geom4326.getCoordinates();
+
+  const extent4326 = geom4326.getExtent();
+  const bbox = [extent4326[1], extent4326[0], extent4326[3], extent4326[2]];
+
+  const ring = polygonCoords[0];
+  let sumLon = 0;
+  let sumLat = 0;
+  const count = ring.length - 1;
+  for (let i = 0; i < count; i++) {
+    sumLon += ring[i][0];
+    sumLat += ring[i][1];
+  }
+  const centroid = [sumLon / count, sumLat / count];
+
+  return {
+    areaSquareMeters,
+    areaHectares: areaSquareMeters / 10000,
+    areaSquareKilometers: areaSquareMeters / 1000000,
+    centroid,
+    bbox,
+    polygonCoords
+  };
 }

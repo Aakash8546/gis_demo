@@ -16,7 +16,6 @@ import LineString from 'ol/geom/LineString';
 import VectorTileLayer from 'ol/layer/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
 import MVT from 'ol/format/MVT';
-import { PMTilesVectorSource } from 'ol-pmtiles';
 import { fromLonLat, toLonLat } from 'ol/proj';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import { Fill, Stroke, Style, Circle as CircleStyle, Text } from 'ol/style';
@@ -41,6 +40,19 @@ import {
   Ruler,
   Maximize2,
   Minimize2,
+  X,
+  Loader2,
+  HeartPulse,
+  GraduationCap,
+  Dumbbell,
+  Trees,
+  Building,
+  Train,
+  Newspaper,
+  ExternalLink,
+  Phone,
+  Globe,
+  Sparkles,
 } from 'lucide-react';
 import {
   countGeometries,
@@ -50,8 +62,19 @@ import {
   readGeoJsonFeatures,
   writeGeoJsonFeatures,
   calculateLineDistance,
-  calculateDistanceBetweenCoordinates
+  calculateDistanceBetweenCoordinates,
+  getPolygonMetrics,
+  isPointInPolygon
 } from './utils/spatial';
+
+const AMENITY_CATEGORIES = {
+  'Healthcare': { icon: HeartPulse, color: 'text-rose-400 bg-rose-400/10 border-rose-400/20' },
+  'Education': { icon: GraduationCap, color: 'text-amber-400 bg-amber-400/10 border-amber-400/20' },
+  'Fitness': { icon: Dumbbell, color: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' },
+  'Recreation': { icon: Trees, color: 'text-lime-400 bg-lime-400/10 border-lime-400/20' },
+  'Public Services': { icon: Building, color: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20' },
+  'Transportation': { icon: Train, color: 'text-indigo-400 bg-indigo-400/10 border-indigo-400/20' }
+};
 
 
 const isRetina = typeof window !== 'undefined' && window.devicePixelRatio > 1;
@@ -60,14 +83,14 @@ const scale = isRetina ? '@2x' : '';
 
 const BASEMAPS = {
   dark: {
-    label: 'Nighttime (PMTiles)',
-    url: '/varanasi.pmtiles',
-    attributions: 'Protomaps &copy; OpenStreetMap'
+    label: 'Nighttime (CartoDB)',
+    url: 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attributions: '&copy; OpenStreetMap contributors &copy; CartoDB'
   },
   light: {
-    label: 'Daytime (PMTiles)',
-    url: '/varanasi.pmtiles',
-    attributions: 'Protomaps &copy; OpenStreetMap'
+    label: 'Daytime (OSM)',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attributions: '&copy; OpenStreetMap contributors'
   },
   satellite: {
     label: 'Satellite (Esri)',
@@ -260,7 +283,7 @@ function layerStyleFactory(layer) {
 }
 
 function highlightStyleFactory() {
-  return [
+  const polyStyle = [
     new Style({
       stroke: new Stroke({ color: '#facc15', width: 4 }),
       fill: new Fill({ color: 'rgba(250, 204, 21, 0.08)' })
@@ -269,6 +292,31 @@ function highlightStyleFactory() {
       stroke: new Stroke({ color: '#ffffff', width: 1.5 })
     })
   ];
+
+  const pointStyle = [
+    new Style({
+      image: new CircleStyle({
+        radius: 16,
+        stroke: new Stroke({ color: '#22d3ee', width: 2, lineDash: [2, 2] }),
+        fill: new Fill({ color: 'rgba(34, 211, 238, 0.15)' })
+      })
+    }),
+    new Style({
+      image: new CircleStyle({
+        radius: 6,
+        fill: new Fill({ color: '#22d3ee' }),
+        stroke: new Stroke({ color: '#ffffff', width: 2 })
+      })
+    })
+  ];
+
+  return (feature) => {
+    const geomType = feature.getGeometry()?.getType();
+    if (geomType === 'Point' || geomType === 'MultiPoint') {
+      return pointStyle;
+    }
+    return polyStyle;
+  };
 }
 
 function pointMarkerStyle(color) {
@@ -336,20 +384,18 @@ function App() {
   const modifyInteractionRef = useRef(null);
   const snapInteractionRef = useRef(null);
   const basemapLayersRef = useRef({
-    dark: new VectorTileLayer({
-      source: new PMTilesVectorSource({
+    dark: new TileLayer({
+      source: new XYZ({
         url: BASEMAPS.dark.url,
         attributions: BASEMAPS.dark.attributions
       }),
-      style: getPmtilesStyle('dark'),
       visible: true
     }),
-    light: new VectorTileLayer({
-      source: new PMTilesVectorSource({
+    light: new TileLayer({
+      source: new XYZ({
         url: BASEMAPS.light.url,
         attributions: BASEMAPS.light.attributions
       }),
-      style: getPmtilesStyle('light'),
       visible: false
     }),
     satellite: new TileLayer({
@@ -374,14 +420,6 @@ function App() {
         attributions: BASEMAPS.varanasi_mbtiles.attributions
       }),
       style: getPmtilesStyle('light'),
-      visible: false
-    }),
-    varanasi_pmtiles: new VectorTileLayer({
-      source: new PMTilesVectorSource({
-        url: '/varanasi.pmtiles',
-        attributions: 'Protomaps &copy; OpenStreetMap'
-      }),
-      style: getPmtilesStyle('dark'),
       visible: false
     })
   });
@@ -423,6 +461,206 @@ function App() {
 
   const [currentCity, setCurrentCity] = useState('Varanasi');
   const cityCache = useRef({});
+
+  // Live Area Intelligence Hooks
+  const [liveAmenities, setLiveAmenities] = useState(null);
+  const [liveAmenitiesLoading, setLiveAmenitiesLoading] = useState(false);
+  const [liveAmenitiesError, setLiveAmenitiesError] = useState('');
+  const [localNews, setLocalNews] = useState([]);
+  const [localNewsLoading, setLocalNewsLoading] = useState(false);
+  const [localNewsLocation, setLocalNewsLocation] = useState('');
+  const [selectedAmenityCategory, setSelectedAmenityCategory] = useState(null);
+  const [highlightedLiveAmenity, setHighlightedLiveAmenity] = useState(null);
+  const [amenitySearchQuery, setAmenitySearchQuery] = useState('');
+
+  const fetchLiveAreaIntelligence = async (metrics) => {
+    setLiveAmenitiesLoading(true);
+    setLiveAmenitiesError('');
+    setLocalNewsLoading(true);
+    setLiveAmenities(null);
+    setLocalNews([]);
+    setLocalNewsLocation('');
+    setSelectedAmenityCategory(null);
+    setHighlightedLiveAmenity(null);
+    if (highlightLayerRef.current) {
+      highlightLayerRef.current.getSource().clear();
+    }
+
+    const [south, west, north, east] = metrics.bbox;
+
+    const overpassQuery = `[out:json][timeout:25];
+(
+  node["amenity"~"hospital|clinic|pharmacy|school|college|university|police|fire_station|townhall|courthouse|library|bus_station|bus_stop|railway_station|subway_entrance|gym|sports_centre|park|playground"](${south},${west},${north},${east});
+  way["amenity"~"hospital|clinic|pharmacy|school|college|university|police|fire_station|townhall|courthouse|library|bus_station|bus_stop|railway_station|subway_entrance|gym|sports_centre|park|playground"](${south},${west},${north},${east});
+  node["leisure"~"sports_centre|park|playground"](${south},${west},${north},${east});
+  way["leisure"~"sports_centre|park|playground"](${south},${west},${north},${east});
+);
+out center;`;
+
+    const endpoints = [
+      'https://overpass.openstreetmap.fr/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://lz4.overpass-api.de/api/interpreter',
+      'https://z.overpass-api.de/api/interpreter',
+      'https://overpass-api.de/api/interpreter'
+    ];
+
+    let osmElements = [];
+    let success = false;
+
+    for (const url of endpoints) {
+      try {
+        console.log(`Querying Overpass API via: ${url}`);
+        const overpassUrl = `${url}?data=${encodeURIComponent(overpassQuery)}`;
+        const res = await fetch(overpassUrl);
+        if (!res.ok) throw new Error(`HTTP error ${res.status} from ${url}`);
+        const data = await res.json();
+        osmElements = data.elements || [];
+        success = true;
+        break;
+      } catch (err) {
+        console.warn(`Overpass API instance ${url} failed:`, err);
+      }
+    }
+
+    if (!success) {
+      setLiveAmenitiesError("Failed to load live amenities from any OpenStreetMap API endpoint.");
+    }
+
+    const categorized = {
+      'Healthcare': [],
+      'Education': [],
+      'Fitness': [],
+      'Recreation': [],
+      'Public Services': [],
+      'Transportation': []
+    };
+
+    osmElements.forEach((el) => {
+      const lat = el.lat || (el.center && el.center.lat);
+      const lon = el.lon || (el.center && el.center.lon);
+      if (!lat || !lon) return;
+
+      const isInside = isPointInPolygon([lon, lat], metrics.polygonCoords);
+      if (!isInside) return;
+
+      const tags = el.tags || {};
+      const amenity = tags.amenity;
+      const leisure = tags.leisure;
+
+      let category = null;
+      if (amenity === 'hospital' || amenity === 'clinic' || amenity === 'pharmacy') {
+        category = 'Healthcare';
+      } else if (amenity === 'school' || amenity === 'college' || amenity === 'university' || amenity === 'library') {
+        category = 'Education';
+      } else if (amenity === 'gym' || leisure === 'sports_centre' || amenity === 'sports_centre') {
+        category = 'Fitness';
+      } else if (leisure === 'park' || leisure === 'playground' || amenity === 'park' || amenity === 'playground') {
+        category = 'Recreation';
+      } else if (amenity === 'police' || amenity === 'fire_station' || amenity === 'townhall' || amenity === 'courthouse') {
+        category = 'Public Services';
+      } else if (amenity === 'bus_stop' || amenity === 'bus_station' || amenity === 'railway_station' || amenity === 'subway_entrance') {
+        category = 'Transportation';
+      }
+
+      if (category) {
+        let name = tags.name || tags.operator || `${tags.amenity || tags.leisure || 'Amenity'}`;
+        name = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        
+        const address = tags['addr:street'] 
+          ? `${tags['addr:housenumber'] || ''} ${tags['addr:street']}, ${tags['addr:city'] || ''}`.trim() 
+          : tags['addr:full'] || 'Address unavailable';
+
+        categorized[category].push({
+          id: el.id,
+          name,
+          category,
+          lat,
+          lng: lon,
+          address,
+          contact: tags.phone || tags['contact:phone'] || tags['contact:mobile'] || 'Phone unavailable',
+          website: tags.website || tags['contact:website'] || tags.url || 'Website unavailable',
+          rating: tags.rating || 'No rating'
+        });
+      }
+    });
+
+    setLiveAmenities(categorized);
+    setLiveAmenitiesLoading(false);
+
+    const [centLon, centLat] = metrics.centroid;
+    let cityName = 'Varanasi';
+    try {
+      const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${centLat}&lon=${centLon}&zoom=12`);
+      const geoData = await geoRes.json();
+      if (geoData && geoData.address) {
+        cityName = geoData.address.city || 
+                   geoData.address.town || 
+                   geoData.address.village || 
+                   geoData.address.city_district || 
+                   geoData.address.county || 
+                   'Varanasi';
+      }
+    } catch (e) {
+      console.warn("Centroid reverse geocoding failed", e);
+    }
+
+    setLocalNewsLocation(cityName);
+
+    try {
+      const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cityName)}&hl=en-IN&gl=IN&ceid=IN:en`;
+      const rss2jsonUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
+      const newsRes = await fetch(rss2jsonUrl);
+      const newsData = await newsRes.json();
+      if (newsData && newsData.items) {
+        const parsedNews = newsData.items.slice(0, 5).map(item => ({
+          title: item.title,
+          link: item.link,
+          source: item.source || 'News Update',
+          pubDate: item.pubDate ? new Date(item.pubDate).toLocaleDateString() : 'Recent'
+        }));
+        setLocalNews(parsedNews);
+      } else {
+        setLocalNews([]);
+      }
+    } catch (newsErr) {
+      console.error("News fetch failed", newsErr);
+      setLocalNews([]);
+    } finally {
+      setLocalNewsLoading(false);
+    }
+  };
+
+  const selectedAreaPolygon = useMemo(() => {
+    return drawSourceRef.current
+      .getFeatures()
+      .filter((feature) => feature.getGeometry()?.getType() === 'Polygon')
+      .at(-1);
+  }, [drawRevision]);
+
+  const selectedAreaMetrics = useMemo(() => {
+    if (!selectedAreaPolygon) return null;
+    return getPolygonMetrics(selectedAreaPolygon);
+  }, [selectedAreaPolygon]);
+
+  useEffect(() => {
+    if (!selectedAreaMetrics) {
+      setLiveAmenities(null);
+      setLocalNews([]);
+      setLocalNewsLocation('');
+      setSelectedAmenityCategory(null);
+      setHighlightedLiveAmenity(null);
+      if (highlightLayerRef.current) {
+        highlightLayerRef.current.getSource().clear();
+      }
+      return;
+    }
+    fetchLiveAreaIntelligence(selectedAreaMetrics);
+  }, [selectedAreaMetrics]);
+
+  useEffect(() => {
+    setAmenitySearchQuery('');
+  }, [selectedAmenityCategory]);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -653,7 +891,6 @@ function App() {
           basemapLayersRef.current.satellite,
           basemapLayersRef.current.satelliteLabels,
           basemapLayersRef.current.varanasi_mbtiles,
-          basemapLayersRef.current.varanasi_pmtiles,
           highlightLayer, selectedPointLayer, distanceMeasureLayer, drawLayer
         ],
         overlays: [tooltipOverlay, hoverTooltipOverlay],
@@ -1062,6 +1299,11 @@ function App() {
   function clearDrawings() {
     drawSourceRef.current.clear();
     highlightSourceRef.current.clear();
+    setLiveAmenities(null);
+    setLocalNews([]);
+    setLocalNewsLocation('');
+    setSelectedAmenityCategory(null);
+    setHighlightedLiveAmenity(null);
     setStatusMessage('Selected area cleared.');
   }
 
@@ -1172,12 +1414,7 @@ function App() {
     setStatusMessage(`Added ${name} to ${layer.name}.`);
   }
 
-  const selectedAreaPolygon = useMemo(() => {
-    return drawSourceRef.current
-      .getFeatures()
-      .filter((feature) => feature.getGeometry()?.getType() === 'Polygon')
-      .at(-1);
-  }, [drawRevision]);
+
 
   const selectedAreaAnalysis = useMemo(() => {
     return analyzeSelectedArea({
@@ -1191,12 +1428,29 @@ function App() {
       return null;
     }
 
+    const sqMeters = selectedAreaAnalysis.areaSquareMeters;
+    const activeLayersCount = Object.entries(selectedAreaAnalysis.layerCounts).filter(([, count]) => count > 0).length;
+
     return [
-      ['Area', `${selectedAreaAnalysis.areaSquareKilometers.toFixed(2)} km²`],
-      ['Features Inside', selectedAreaAnalysis.totalFeatures],
-      ['Intersecting Layers', Object.entries(selectedAreaAnalysis.layerCounts).filter(([, count]) => count > 0).length]
+      ['Area', `${sqMeters.toLocaleString(undefined, { maximumFractionDigits: 0 })} m²`],
+      ['Layers Inside', activeLayersCount]
     ];
   }, [selectedAreaAnalysis]);
+
+  const filteredAmenities = useMemo(() => {
+    if (!selectedAmenityCategory || !liveAmenities || !liveAmenities[selectedAmenityCategory]) {
+      return [];
+    }
+    const list = liveAmenities[selectedAmenityCategory];
+    if (!amenitySearchQuery.trim()) {
+      return list;
+    }
+    const q = amenitySearchQuery.toLowerCase();
+    return list.filter(item => 
+      item.name.toLowerCase().includes(q) || 
+      item.address.toLowerCase().includes(q)
+    );
+  }, [liveAmenities, selectedAmenityCategory, amenitySearchQuery]);
 
   const markerDistance = useMemo(() => {
     if (selectedMarkersForDistance.length !== 2) {
@@ -1575,14 +1829,14 @@ function App() {
                 {areaMetrics?.map(([label, value]) => (
                   <div key={label} className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2">
                     <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">{label}</p>
-                    <p className="mt-0.5 text-xs font-bold text-white">{value}</p>
+                    <p className="mt-0.5 text-xs font-bold text-white leading-tight truncate">{value}</p>
                   </div>
                 ))}
               </div>
 
               <div className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2 text-xs text-slate-300">
                 <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Features Inside</p>
-                <div className="mt-2 space-y-2 max-h-[16vh] overflow-y-auto pr-1 custom-scrollbar">
+                <div className="mt-2 space-y-2 max-h-[12vh] overflow-y-auto pr-1 custom-scrollbar">
                   {selectedAreaAnalysis.featuresInside.length === 0 ? (
                     <p className="text-[11px] text-slate-400 italic text-center py-1">No features found inside area.</p>
                   ) : (
@@ -1596,6 +1850,96 @@ function App() {
                     ))
                   )}
                 </div>
+              </div>
+
+              {/* Live Amenities Discovery */}
+              <div className="border-t border-white/10 pt-3 mt-3">
+                <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
+                  <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
+                  Live Amenities Discovery
+                </h3>
+                
+                {liveAmenitiesLoading ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-xs">
+                    <Loader2 className="h-6 w-6 animate-spin text-cyan-400 mb-2" />
+                    <span>Discovering live amenities...</span>
+                  </div>
+                ) : liveAmenitiesError ? (
+                  <div className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-xl p-3 text-center">
+                    {liveAmenitiesError}
+                  </div>
+                ) : liveAmenities ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(liveAmenities).map(([category, list]) => {
+                      const isActive = selectedAmenityCategory === category;
+                      const config = AMENITY_CATEGORIES[category] || { icon: Activity, color: 'text-slate-400 bg-slate-400/10' };
+                      const IconComponent = config.icon;
+                      
+                      return (
+                        <button
+                          key={category}
+                          onClick={() => setSelectedAmenityCategory(isActive ? null : category)}
+                          className={`flex items-center justify-between p-2 rounded-xl border text-left transition-all ${
+                            isActive
+                              ? 'bg-cyan-500/10 border-cyan-400/40 shadow-[0_0_12px_rgba(34,211,238,0.1)] text-white'
+                              : 'bg-slate-900/40 border-white/5 hover:border-white/10 hover:bg-slate-900/60 text-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 truncate">
+                            <div className={`p-1 rounded-lg ${isActive ? 'bg-cyan-400/20 text-cyan-300' : config.color} flex-shrink-0`}>
+                              <IconComponent className="h-3.5 w-3.5" />
+                            </div>
+                            <span className="text-[10px] font-semibold truncate leading-tight">{category}</span>
+                          </div>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                            isActive ? 'bg-cyan-400/20 text-cyan-300' : 'bg-white/5 text-slate-400'
+                          }`}>
+                            {list.length}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 italic text-center py-2">No live data loaded.</p>
+                )}
+              </div>
+
+              {/* Local News Feed */}
+              <div className="border-t border-white/10 pt-3 mt-3">
+                <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
+                  <Newspaper className="h-3.5 w-3.5 text-purple-400" />
+                  Local News {localNewsLocation ? `· ${localNewsLocation}` : ''}
+                </h3>
+                
+                {localNewsLoading ? (
+                  <div className="flex items-center gap-2 justify-center py-3 text-slate-400 text-xs">
+                    <Loader2 className="h-4 w-4 animate-spin text-purple-400 mr-2" />
+                    <span>Fetching local updates...</span>
+                  </div>
+                ) : localNews && localNews.length > 0 ? (
+                  <div className="space-y-2 max-h-[14vh] overflow-y-auto pr-1 custom-scrollbar">
+                    {localNews.map((item, index) => (
+                      <a
+                        key={index}
+                        href={item.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block rounded-xl bg-slate-900/40 border border-white/5 hover:border-white/15 hover:bg-slate-900/70 p-2.5 transition-all text-left pointer-events-auto"
+                      >
+                        <p className="text-[11px] font-semibold text-slate-200 line-clamp-2 hover:text-white leading-snug">
+                          {item.title}
+                        </p>
+                        <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1.5">
+                          <span className="font-medium">{item.source}</span>
+                          <span>{item.pubDate}</span>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 italic text-center py-2">No local news updates found for this area.</p>
+                )}
               </div>
             </div>
           ) : (
@@ -1710,6 +2054,179 @@ function App() {
           )}
         </div>
       </div>
+
+      {/* Right sliding explorer panel */}
+      {selectedAmenityCategory && (
+        <div className="fixed top-28 right-6 bottom-6 w-[360px] z-30 flex flex-col rounded-[24px] border border-white/10 bg-slate-950/80 shadow-2xl backdrop-blur-xl pointer-events-auto transition-all duration-300">
+          {/* Panel Header */}
+          <div className="flex items-center justify-between p-5 border-b border-white/15">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400">
+                {(() => {
+                  const config = AMENITY_CATEGORIES[selectedAmenityCategory];
+                  if (!config) return <MapPin className="h-4 w-4" />;
+                  const Icon = config.icon;
+                  return <Icon className="h-4 w-4" />;
+                })()}
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  {selectedAmenityCategory} Discovery
+                </h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  {filteredAmenities.length} facilities found
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedAmenityCategory(null)}
+              className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Search bar inside panel */}
+          <div className="p-4 border-b border-white/10">
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={amenitySearchQuery}
+                onChange={(e) => setAmenitySearchQuery(e.target.value)}
+                placeholder={`Search ${selectedAmenityCategory.toLowerCase()}...`}
+                className="w-full rounded-2xl border border-white/10 bg-slate-900/40 py-2 pl-9 pr-4 text-xs font-semibold text-white placeholder-slate-400 focus:border-cyan-400/50 focus:outline-none focus:ring-1 focus:ring-cyan-400/50"
+              />
+              {amenitySearchQuery && (
+                <button
+                  onClick={() => setAmenitySearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* List of facilities */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar select-none">
+            {filteredAmenities.length === 0 ? (
+              <div className="text-center py-8 text-xs text-slate-400 italic leading-relaxed">
+                {amenitySearchQuery ? 'No facilities match your search.' : 'No facilities found in this category.'}
+              </div>
+            ) : (
+              filteredAmenities.map((amenity) => {
+                const isHighlighted = highlightedLiveAmenity?.id === amenity.id;
+                return (
+                  <button
+                    key={amenity.id}
+                    onClick={() => {
+                      setHighlightedLiveAmenity(amenity);
+                      const center = fromLonLat([amenity.lng, amenity.lat]);
+                      if (mapRef.current) {
+                        mapRef.current.getView().animate({
+                          center,
+                          zoom: 17,
+                          duration: 800
+                        });
+                        highlightSourceRef.current.clear();
+                        const geom = new Point(center);
+                        const feat = new Feature({ geometry: geom });
+                        feat.setProperties({
+                          name: amenity.name,
+                          category: amenity.category,
+                          address: amenity.address,
+                          contact: amenity.contact,
+                          website: amenity.website,
+                          rating: amenity.rating
+                        });
+                        highlightSourceRef.current.addFeature(feat);
+                      }
+                    }}
+                    className={`w-full text-left rounded-2xl p-3 border transition-all flex flex-col gap-1.5 ${
+                      isHighlighted
+                        ? 'bg-cyan-500/10 border-cyan-400/50 shadow-lg shadow-cyan-500/5'
+                        : 'bg-slate-900/40 border-white/5 hover:border-white/15 hover:bg-slate-900/60'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-xs font-bold text-white leading-tight">
+                        {amenity.name}
+                      </h4>
+                      {amenity.rating && amenity.rating !== 'No rating' && (
+                        <span className="text-[9px] uppercase font-bold text-amber-300 bg-amber-400/10 px-1.5 py-0.5 rounded border border-amber-400/10 flex-shrink-0">
+                          ★ {amenity.rating}
+                        </span>
+                      )}
+                    </div>
+                    {amenity.address && amenity.address !== 'Address unavailable' && (
+                      <p className="text-[10px] text-slate-400 truncate flex items-center gap-1">
+                        <MapPin className="h-3 w-3 text-cyan-400 flex-shrink-0" />
+                        <span className="truncate">{amenity.address}</span>
+                      </p>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Floating Detailed Amenity Card */}
+      {highlightedLiveAmenity && (
+        <div className="fixed bottom-24 right-6 z-30 w-[360px] rounded-[24px] border border-cyan-500/30 bg-slate-950/90 p-5 shadow-2xl backdrop-blur-xl pointer-events-auto flex flex-col gap-3">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <span className="inline-block text-[9px] uppercase font-bold px-2 py-0.5 rounded bg-cyan-400/10 text-cyan-300 border border-cyan-400/20 mb-1.5">
+                {highlightedLiveAmenity.category}
+              </span>
+              <h3 className="text-xs font-bold text-white leading-snug">
+                {highlightedLiveAmenity.name}
+              </h3>
+            </div>
+            <button
+              onClick={() => {
+                setHighlightedLiveAmenity(null);
+                if (highlightLayerRef.current) {
+                  highlightLayerRef.current.getSource().clear();
+                }
+              }}
+              className="text-slate-400 hover:text-white transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          
+          <div className="space-y-2 text-xs text-slate-300">
+            {highlightedLiveAmenity.address && highlightedLiveAmenity.address !== 'Address unavailable' && (
+              <p className="flex items-start gap-2 text-[11px]">
+                <MapPin className="h-3.5 w-3.5 text-cyan-400 mt-0.5 flex-shrink-0" />
+                <span>{highlightedLiveAmenity.address}</span>
+              </p>
+            )}
+            {highlightedLiveAmenity.contact && highlightedLiveAmenity.contact !== 'Phone unavailable' && (
+              <p className="flex items-start gap-2 text-[11px]">
+                <Phone className="h-3.5 w-3.5 text-cyan-400 mt-0.5 flex-shrink-0" />
+                <span>{highlightedLiveAmenity.contact}</span>
+              </p>
+            )}
+            {highlightedLiveAmenity.website && highlightedLiveAmenity.website !== 'Website unavailable' && (
+              <p className="flex items-start gap-2 text-[11px]">
+                <Globe className="h-3.5 w-3.5 text-cyan-400 mt-0.5 flex-shrink-0" />
+                <a
+                  href={highlightedLiveAmenity.website.startsWith('http') ? highlightedLiveAmenity.website : `http://${highlightedLiveAmenity.website}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-cyan-400 hover:underline truncate"
+                >
+                  {highlightedLiveAmenity.website}
+                </a>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Floating Status Message Toast/Notification */}
       {statusMessage && (
