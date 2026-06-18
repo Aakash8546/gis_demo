@@ -76,6 +76,13 @@ const AMENITY_CATEGORIES = {
   'Transportation': { icon: Train, color: 'text-indigo-400 bg-indigo-400/10 border-indigo-400/20' }
 };
 
+const LULC_COLORS = {
+  BuiltUp: { bg: 'bg-orange-500', text: 'text-orange-400', hex: '#f97316' },
+  Agriculture: { bg: 'bg-yellow-500', text: 'text-yellow-400', hex: '#eab308' },
+  Forest: { bg: 'bg-emerald-500', text: 'text-emerald-400', hex: '#10b981' },
+  Water: { bg: 'bg-blue-500', text: 'text-blue-400', hex: '#3b82f6' }
+};
+
 
 const isRetina = typeof window !== 'undefined' && window.devicePixelRatio > 1;
 const tilePixelRatio = isRetina ? 2 : 1;
@@ -466,6 +473,11 @@ function App() {
   const [liveAmenities, setLiveAmenities] = useState(null);
   const [liveAmenitiesLoading, setLiveAmenitiesLoading] = useState(false);
   const [liveAmenitiesError, setLiveAmenitiesError] = useState('');
+
+  // LULC Analysis Hooks
+  const [lulcData, setLulcData] = useState(null);
+  const [lulcLoading, setLulcLoading] = useState(false);
+  const [lulcError, setLulcError] = useState('');
   const [localNews, setLocalNews] = useState([]);
   const [localNewsLoading, setLocalNewsLoading] = useState(false);
   const [localNewsLocation, setLocalNewsLocation] = useState('');
@@ -631,6 +643,34 @@ out center;`;
     }
   };
 
+  const fetchLulcAnalysis = async (polygonCoords) => {
+    setLulcLoading(true);
+    setLulcError('');
+    setLulcData(null);
+
+    try {
+      const response = await fetch('http://localhost:8090/api/lulc/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ coordinates: polygonCoords })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setLulcData(data);
+    } catch (err) {
+      console.error('LULC analysis error:', err);
+      setLulcError('Failed to perform LULC analysis.');
+    } finally {
+      setLulcLoading(false);
+    }
+  };
+
   const selectedAreaPolygon = useMemo(() => {
     return drawSourceRef.current
       .getFeatures()
@@ -650,12 +690,15 @@ out center;`;
       setLocalNewsLocation('');
       setSelectedAmenityCategory(null);
       setHighlightedLiveAmenity(null);
+      setLulcData(null);
+      setLulcError('');
       if (highlightLayerRef.current) {
         highlightLayerRef.current.getSource().clear();
       }
       return;
     }
     fetchLiveAreaIntelligence(selectedAreaMetrics);
+    fetchLulcAnalysis(selectedAreaMetrics.polygonCoords);
   }, [selectedAreaMetrics]);
 
   useEffect(() => {
@@ -1852,17 +1895,72 @@ out center;`;
                 </div>
               </div>
 
+              {/* LULC (Land Use Land Cover) Analysis */}
+              <div className="border-t border-white/10 pt-3 mt-3">
+                <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
+                  <Globe className="h-3.5 w-3.5 text-emerald-400" />
+                  LULC
+                </h3>
+
+                {lulcLoading ? (
+                  <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-xs">
+                    <Loader2 className="h-6 w-6 animate-spin text-emerald-400 mb-2" />
+                    <span>Analyzing land cover...</span>
+                  </div>
+                ) : lulcError ? (
+                  <div className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-xl p-3 text-center">
+                    {lulcError}
+                  </div>
+                ) : lulcData ? (
+                  <div className="space-y-2.5">
+                    {/* Class Stats */}
+                    <div className="space-y-2.5">
+                      {lulcData.classes && lulcData.classes.length > 0 ? (
+                        lulcData.classes.map((cls) => {
+                          const style = LULC_COLORS[cls.className] || { bg: 'bg-slate-500', text: 'text-slate-400' };
+                          return (
+                            <div key={cls.className} className="space-y-1">
+                              <div className="flex items-center justify-between text-[10px]">
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`h-2 w-2 rounded-full ${style.bg}`} />
+                                  <span className="font-semibold text-slate-300">{cls.className}</span>
+                                </div>
+                                <div className="text-right text-slate-400 font-medium">
+                                  <span className="text-white font-bold mr-1">{cls.percentage}%</span>
+                                  <span>({Math.round(cls.area).toLocaleString()} m²)</span>
+                                </div>
+                              </div>
+                              {/* Bar container */}
+                              <div className="h-1.5 w-full bg-slate-900/60 rounded-full overflow-hidden border border-white/5">
+                                <div
+                                  className={`h-full ${style.bg} transition-all duration-500 rounded-full`}
+                                  style={{ width: `${cls.percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic text-center py-1">LULC data not available</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 italic text-center py-2">No LULC data available.</p>
+                )}
+              </div>
+
               {/* Live Amenities Discovery */}
               <div className="border-t border-white/10 pt-3 mt-3">
                 <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
                   <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
-                  Live Amenities Discovery
+                  Amenities Nearby
                 </h3>
                 
                 {liveAmenitiesLoading ? (
                   <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-xs">
                     <Loader2 className="h-6 w-6 animate-spin text-cyan-400 mb-2" />
-                    <span>Discovering live amenities...</span>
+                    <span>Discovering amenities...</span>
                   </div>
                 ) : liveAmenitiesError ? (
                   <div className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-xl p-3 text-center">
