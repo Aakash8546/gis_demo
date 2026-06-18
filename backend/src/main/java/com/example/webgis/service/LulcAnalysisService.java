@@ -6,6 +6,9 @@ import com.example.webgis.dto.LulcResponse;
 import com.example.webgis.exception.LulcAnalysisException;
 import com.example.webgis.repository.LulcGeometryRepository;
 import com.example.webgis.repository.projection.LulcClassStatProjection;
+import com.example.webgis.repository.projection.LulcGeomProjection;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,6 +24,7 @@ import java.util.List;
 public class LulcAnalysisService {
 
     private final LulcGeometryRepository repository;
+    private final ObjectMapper objectMapper;
 
     @Transactional(readOnly = true)
     public LulcResponse analyzeLulc(LulcRequest request) {
@@ -34,6 +38,15 @@ public class LulcAnalysisService {
         } catch (Exception e) {
             log.error("Failed to execute LULC spatial intersection query in database", e);
             throw new LulcAnalysisException("Spatial query execution failed: " + e.getMessage(), e);
+        }
+
+        List<LulcGeomProjection> intersectedGeoms;
+        try {
+            intersectedGeoms = repository.findIntersectedGeometries(wkt);
+            log.info("Fetched {} intersected geometry features from database", intersectedGeoms.size());
+        } catch (Exception e) {
+            log.error("Failed to execute LULC spatial intersection geometries query in database", e);
+            throw new LulcAnalysisException("Spatial geometries query execution failed: " + e.getMessage(), e);
         }
 
         double totalArea = 0.0;
@@ -61,7 +74,38 @@ public class LulcAnalysisService {
             stats.add(new LulcClassStat(proj.getClassName(), area, percentage));
         }
 
-        return new LulcResponse(totalArea, stats);
+        // Build GeoJSON FeatureCollection from typed projection results
+        StringBuilder geojsonBuilder = new StringBuilder();
+        geojsonBuilder.append("{\"type\":\"FeatureCollection\",\"features\":[");
+        boolean first = true;
+        for (LulcGeomProjection row : intersectedGeoms) {
+            String className = row.getClassName();
+            String geomJson  = row.getGeojson();
+            if (className != null && geomJson != null && !geomJson.isBlank()) {
+                if (!first) geojsonBuilder.append(",");
+                geojsonBuilder.append("{\"type\":\"Feature\",\"geometry\":")
+                              .append(geomJson)
+                              .append(",\"properties\":{\"className\":\"")
+                              .append(className.replace("\"", "\\\""))  // escape class name
+                              .append("\"}}");
+                first = false;
+            }
+        }
+        geojsonBuilder.append("]}");
+        String geojsonStr = geojsonBuilder.toString();
+        log.info("Built GeoJSON FeatureCollection with {} features", intersectedGeoms.size());
+
+        // Parse the built string into a JsonNode so Jackson embeds it as a real JSON object
+        // (not a double-encoded string) in the HTTP response.
+        JsonNode geojsonNode;
+        try {
+            geojsonNode = objectMapper.readTree(geojsonStr);
+        } catch (Exception e) {
+            log.error("Failed to parse built GeoJSON string into JsonNode", e);
+            throw new LulcAnalysisException("Failed to build GeoJSON response: " + e.getMessage(), e);
+        }
+
+        return new LulcResponse(totalArea, stats, geojsonNode);
     }
 
     private String convertToWkt(List<List<List<Double>>> coordinates) {

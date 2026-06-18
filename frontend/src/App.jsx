@@ -16,6 +16,7 @@ import LineString from 'ol/geom/LineString';
 import VectorTileLayer from 'ol/layer/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
 import MVT from 'ol/format/MVT';
+import GeoJSON from 'ol/format/GeoJSON';
 import { fromLonLat, toLonLat } from 'ol/proj';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import { Fill, Stroke, Style, Circle as CircleStyle, Text } from 'ol/style';
@@ -76,12 +77,69 @@ const AMENITY_CATEGORIES = {
   'Transportation': { icon: Train, color: 'text-indigo-400 bg-indigo-400/10 border-indigo-400/20' }
 };
 
-const LULC_COLORS = {
-  BuiltUp: { bg: 'bg-orange-500', text: 'text-orange-400', hex: '#f97316' },
-  Agriculture: { bg: 'bg-yellow-500', text: 'text-yellow-400', hex: '#eab308' },
-  Forest: { bg: 'bg-emerald-500', text: 'text-emerald-400', hex: '#10b981' },
-  Water: { bg: 'bg-blue-500', text: 'text-blue-400', hex: '#3b82f6' }
+// Well-known LULC semantic colors (seed palette for known classes)
+const LULC_KNOWN_COLORS = {
+  Water:               '#419BDF',
+  Trees:               '#397D49',
+  Grass:               '#88B053',
+  'Flooded Vegetation':'#7A87C6',
+  Crops:               '#E49635',
+  'Shrub and Scrub':   '#DFC35A',
+  'Built Area':        '#C4281B',
+  BuiltUp:             '#C4281B',
+  Agriculture:         '#E49635',
+  Forest:              '#397D49',
+  'Bare Ground':       '#A59B8F',
+  'Snow and Ice':      '#B9CCE2',
+  Wetland:             '#4DBBEB',
+  Industrial:          '#8B5CF6',
+  Scrubland:           '#D97706',
 };
+
+// Deterministic color generator: produces a stable unique hex color from a class name string.
+function generateClassColor(className, existingColors = {}) {
+  if (LULC_KNOWN_COLORS[className]) return LULC_KNOWN_COLORS[className];
+  // Hash the class name to get a stable hue
+  let hash = 0;
+  for (let i = 0; i < className.length; i++) {
+    hash = className.charCodeAt(i) + ((hash << 5) - hash);
+    hash |= 0;
+  }
+  // Distribute hue across 360° avoiding near-grey ranges
+  const hue = Math.abs(hash) % 360;
+  const saturation = 55 + (Math.abs(hash >> 4) % 25); // 55–80%
+  const lightness  = 45 + (Math.abs(hash >> 8) % 15); // 45–60%
+  const hex = hslToHex(hue, saturation, lightness);
+  return hex;
+}
+
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => {
+    const k = (n + h / 30) % 12;
+    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * color).toString(16).padStart(2, '0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+// Build a full className→hex map from an array of class names.
+function buildLulcColorMap(classNames) {
+  const map = {};
+  for (const name of classNames) {
+    if (!map[name]) map[name] = generateClassColor(name, map);
+  }
+  return map;
+}
+
+// Hex → rgba with given alpha (0-1)
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3), 16);
+  const g = parseInt(hex.slice(3,5), 16);
+  const b = parseInt(hex.slice(5,7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 
 const isRetina = typeof window !== 'undefined' && window.devicePixelRatio > 1;
@@ -478,12 +536,45 @@ function App() {
   const [lulcData, setLulcData] = useState(null);
   const [lulcLoading, setLulcLoading] = useState(false);
   const [lulcError, setLulcError] = useState('');
+  // Dynamic class → hex color mapping (auto-built from returned features)
+  const [lulcClassColorMap, setLulcClassColorMap] = useState({});
+  // Mutable ref so the OL style fn always sees the latest map
+  const lulcColorMapRef = useRef({});
+  // LULC layer controls
+  const [lulcLayerVisible, setLulcLayerVisible] = useState(true);
+  const [lulcLayerOpacity, setLulcLayerOpacity] = useState(0.75);
+  // Hover tooltip for LULC features
+  const [lulcHoveredClass, setLulcHoveredClass] = useState(null);
+  const [lulcHighlightedFeature, setLulcHighlightedFeature] = useState(null);
   const [localNews, setLocalNews] = useState([]);
   const [localNewsLoading, setLocalNewsLoading] = useState(false);
   const [localNewsLocation, setLocalNewsLocation] = useState('');
   const [selectedAmenityCategory, setSelectedAmenityCategory] = useState(null);
   const [highlightedLiveAmenity, setHighlightedLiveAmenity] = useState(null);
   const [amenitySearchQuery, setAmenitySearchQuery] = useState('');
+
+  const [activeSidebarTab, setActiveSidebarTab] = useState('layers'); // 'layers', 'analysis'
+  const [activeAnalysisSubTab, setActiveAnalysisSubTab] = useState('lulc'); // 'lulc', 'insights'
+
+  const lulcSourceRef = useRef(new VectorSource());
+  const lulcLayerRef = useRef(
+    new VectorLayer({
+      source: lulcSourceRef.current,
+      // Style reads dynamically from lulcColorMapRef (always fresh, no closure stale issue)
+      style: (feature) => {
+        const className = feature.get('className');
+        const isHighlighted = feature.get('_lulcHighlighted');
+        const colorMap = lulcColorMapRef.current;
+        const color = colorMap[className] || '#94a3b8';
+        const fillAlpha = isHighlighted ? 0.92 : 0.75;
+        const strokeWidth = isHighlighted ? 3 : 1.5;
+        return new Style({
+          fill: new Fill({ color: hexToRgba(color, fillAlpha) }),
+          stroke: new Stroke({ color, width: strokeWidth })
+        });
+      }
+    })
+  );
 
   const fetchLiveAreaIntelligence = async (metrics) => {
     setLiveAmenitiesLoading(true);
@@ -647,22 +738,61 @@ out center;`;
     setLulcLoading(true);
     setLulcError('');
     setLulcData(null);
+    setLulcClassColorMap({});
+    setLulcHoveredClass(null);
+    setLulcHighlightedFeature(null);
+    lulcSourceRef.current.clear();
 
     try {
-      const response = await fetch('http://localhost:8090/api/lulc/analyze', {
+      const response = await fetch('/api/lulc/analyze', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ coordinates: polygonCoords })
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
       const data = await response.json();
       setLulcData(data);
+
+      if (data.geojson) {
+        // Backend returns geojson as a JSON string (double-encoded) — parse it first
+        const geojsonObj = typeof data.geojson === 'string'
+          ? JSON.parse(data.geojson)
+          : data.geojson;
+
+        console.log('[LULC] GeoJSON features received:', geojsonObj?.features?.length ?? 0);
+
+        const features = new GeoJSON().readFeatures(geojsonObj, {
+          dataProjection: 'EPSG:4326',
+          featureProjection: 'EPSG:3857'
+        });
+
+        console.log('[LULC] OL features parsed:', features.length);
+
+        // === Dynamic color map ===
+        // 1. Collect unique class names from features + from stats classes
+        const classNamesFromFeatures = features.map(f => f.get('className')).filter(Boolean);
+        const classNamesFromStats = (data.classes || []).map(c => c.className).filter(Boolean);
+        const allUniqueClasses = [...new Set([...classNamesFromFeatures, ...classNamesFromStats])];
+
+        // 2. Build deterministic color map
+        const colorMap = buildLulcColorMap(allUniqueClasses);
+
+        // 3. Persist to ref (for the OL style function) and to state (for sidebar legend)
+        lulcColorMapRef.current = colorMap;
+        setLulcClassColorMap(colorMap);
+
+        // 4. Add features to source (style fn will pick up colors from ref)
+        lulcSourceRef.current.addFeatures(features);
+        lulcLayerRef.current.changed(); // force re-render
+      } else if (data.classes && data.classes.length > 0) {
+        // No geometries but we have class stats — still build color map for sidebar
+        const allUniqueClasses = [...new Set(data.classes.map(c => c.className).filter(Boolean))];
+        const colorMap = buildLulcColorMap(allUniqueClasses);
+        lulcColorMapRef.current = colorMap;
+        setLulcClassColorMap(colorMap);
+      }
     } catch (err) {
       console.error('LULC analysis error:', err);
       setLulcError('Failed to perform LULC analysis.');
@@ -907,7 +1037,8 @@ out center;`;
       source: drawSourceRef.current,
       style: (feature) => {
         const geometryType = feature.getGeometry()?.getType();
-        const fillColor = 'rgba(168, 85, 247, 0.18)';
+        // Nearly transparent fill so the LULC layer above is visible inside the polygon
+        const fillColor = 'rgba(168, 85, 247, 0.04)';
         const strokeColor = '#a855f7';
         if (geometryType === 'Point') {
           return new Style({
@@ -934,7 +1065,9 @@ out center;`;
           basemapLayersRef.current.satellite,
           basemapLayersRef.current.satelliteLabels,
           basemapLayersRef.current.varanasi_mbtiles,
-          highlightLayer, selectedPointLayer, distanceMeasureLayer, drawLayer
+          highlightLayer, selectedPointLayer, distanceMeasureLayer,
+          drawLayer,
+          lulcLayerRef.current  // LULC renders on top so colors are visible
         ],
         overlays: [tooltipOverlay, hoverTooltipOverlay],
         controls: defaultControls().extend([new ScaleLine()]),
@@ -956,8 +1089,14 @@ out center;`;
 
       const pixel = map.getEventPixel(event.originalEvent);
       let foundMarker = null;
+      let foundLulcClass = null;
 
       map.forEachFeatureAtPixel(pixel, (feature, layer) => {
+        // Check for LULC features first
+        if (!foundLulcClass && layer && layer === lulcLayerRef.current) {
+          const cn = feature.get('className');
+          if (cn) foundLulcClass = cn;
+        }
         if (foundMarker) return;
         if (layer && layer.get('kind') === 'data') {
           const layerId = layer.get('layerId');
@@ -970,6 +1109,9 @@ out center;`;
         }
       });
 
+      // Update LULC hover state
+      setLulcHoveredClass(foundLulcClass || null);
+
       if (foundMarker) {
         map.getTargetElement().style.cursor = 'pointer';
         const geom = foundMarker.getGeometry();
@@ -978,12 +1120,12 @@ out center;`;
         const name = props.name || props.title || props.label || 'Unnamed Marker';
         const category = props.category || props.__layerName || 'No Category';
 
-        setHoveredMarkerInfo({
-          name,
-          category,
-          coordinates: coords
-        });
+        setHoveredMarkerInfo({ name, category, coordinates: coords });
         hoverTooltipOverlay.setPosition(geom.getCoordinates());
+      } else if (foundLulcClass) {
+        map.getTargetElement().style.cursor = 'crosshair';
+        hoverTooltipOverlay.setPosition(undefined);
+        setHoveredMarkerInfo(null);
       } else {
         map.getTargetElement().style.cursor = '';
         hoverTooltipOverlay.setPosition(undefined);
@@ -998,6 +1140,21 @@ out center;`;
 
       if (markerModeRef.current) {
         openFeatureDialog(coordinates);
+        return;
+      }
+
+      // Check for LULC feature click — highlight it
+      let lulcHit = null;
+      map.forEachFeatureAtPixel(event.pixel, (feature, layer) => {
+        if (!lulcHit && layer === lulcLayerRef.current) lulcHit = feature;
+      });
+
+      if (lulcHit) {
+        // Clear previous LULC highlight
+        lulcSourceRef.current.getFeatures().forEach(f => f.set('_lulcHighlighted', false));
+        lulcHit.set('_lulcHighlighted', true);
+        setLulcHighlightedFeature(lulcHit.get('className'));
+        lulcLayerRef.current.changed();
         return;
       }
 
@@ -1017,15 +1174,10 @@ out center;`;
 
           setSelectedMarkersForDistance((current) => {
             const exists = current.find(m => m.id === markerId);
-            if (exists) {
-              return current.filter(m => m.id !== markerId);
-            }
-            if (current.length >= 2) {
-              return [{ id: markerId, name, layerName, coordinates: coords }];
-            }
+            if (exists) return current.filter(m => m.id !== markerId);
+            if (current.length >= 2) return [{ id: markerId, name, layerName, coordinates: coords }];
             return [...current, { id: markerId, name, layerName, coordinates: coords }];
           });
-          
           selectedPointSourceRef.current.clear();
           highlightSourceRef.current.clear();
           return;
@@ -1036,7 +1188,6 @@ out center;`;
         highlightSourceRef.current.addFeature(cloned);
       } else {
         const featureOnDraw = map.forEachFeatureAtPixel(event.pixel, (feature, layer) => (layer?.get('kind') === 'draw' ? feature : null));
-
         if (featureOnDraw) {
           highlightSourceRef.current.clear();
           const cloned = featureOnDraw.clone();
@@ -1342,6 +1493,7 @@ out center;`;
   function clearDrawings() {
     drawSourceRef.current.clear();
     highlightSourceRef.current.clear();
+    lulcSourceRef.current.clear();
     setLiveAmenities(null);
     setLocalNews([]);
     setLocalNewsLocation('');
@@ -1605,515 +1757,700 @@ out center;`;
       {/* Floating Left Sidebar Panel Wrapper */}
       <aside className="fixed top-28 left-6 bottom-6 w-[380px] z-30 overflow-y-auto pr-2 flex flex-col gap-4 custom-scrollbar select-none">
         
-        {/* Layer Explorer Card */}
-        <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-              <Layers3 className="h-4 w-4 text-cyan-400" />
-              Layer Explorer
-            </h2>
-            <button
-              onClick={openLayerDialog}
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-400/10 border border-cyan-400/20 hover:bg-cyan-400/20 px-3 py-1.5 text-xs font-semibold text-cyan-300 transition-all hover:shadow-[0_0_12px_rgba(34,211,238,0.2)]"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Create Layer
-            </button>
-          </div>
-
-          <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar">
-            {layers.length === 0 ? (
-              <p className="text-xs text-slate-400 leading-relaxed italic text-center py-4 bg-white/5 border border-white/5 rounded-2xl">
-                No custom layers created. Click "Create Layer" to start manually adding markers.
-              </p>
-            ) : (
-              layers.map((layer) => (
-                <div key={layer.id} className="rounded-2xl border border-white/10 bg-slate-950/80 p-3.5 hover:border-white/20 transition-all">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <input
-                        value={layer.name}
-                        onChange={(event) =>
-                          updateLayer(layer.id, {
-                            ...layer,
-                            name: event.target.value
-                          })
-                        }
-                        className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-400 transition-all font-medium"
-                      />
-                      <div className="mt-2 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.15em] text-slate-400">
-                        <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">{layer.sourceType}</span>
-                        <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">{layer.metadata.featureCount} features</span>
-                      </div>
-                      {activeLayerId === layer.id && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDrawMode('None');
-                            setMarkerModeEnabled((current) => !current);
-                            setStatusMessage(
-                              !markerModeEnabled
-                                ? `Click the map to add a marker to ${layer.name}.`
-                                : 'Marker mode disabled.'
-                            );
-                          }}
-                          className={`mt-3 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-semibold border transition-all ${
-                            markerModeEnabled
-                              ? 'bg-cyan-400 text-slate-950 border-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.35)]'
-                              : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
-                          }`}
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          {markerModeEnabled ? 'Adding Markers...' : 'Add Marker'}
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setActiveLayerId(layer.id)}
-                        className={`rounded-xl border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.15em] transition-all ${
-                          activeLayerId === layer.id
-                            ? 'border-cyan-400 bg-cyan-400/15 text-cyan-300'
-                            : 'border-white/10 bg-white/5 text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        {activeLayerId === layer.id ? 'Active' : 'Use'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateLayer(layer.id, { ...layer, visible: !layer.visible })}
-                        className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
-                      >
-                        {layer.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeLayer(layer.id)}
-                        className="rounded-xl border border-white/10 bg-white/5 p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-3.5 grid grid-cols-2 gap-3 border-t border-white/5 pt-3">
-                    <label className="text-[11px] text-slate-400 uppercase tracking-[0.1em]">
-                      Color
-                      <input
-                        type="color"
-                        value={layer.color}
-                        onChange={(event) =>
-                          updateLayer(layer.id, {
-                            ...layer,
-                            color: event.target.value
-                          })
-                        }
-                        className="mt-1.5 h-8 w-full rounded-xl border border-white/10 bg-transparent cursor-pointer"
-                      />
-                    </label>
-                    <label className="text-[11px] text-slate-400 uppercase tracking-[0.1em]">
-                      Opacity
-                      <input
-                        type="range"
-                        min="0.2"
-                        max="1"
-                        step="0.05"
-                        value={layer.opacity}
-                        onChange={(event) =>
-                          updateLayer(layer.id, {
-                            ...layer,
-                            opacity: Number(event.target.value)
-                          })
-                        }
-                        className="mt-3.5 w-full accent-cyan-400 cursor-pointer"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-white/5 pt-3">
-                    <label className="flex items-center gap-2 text-[11px] text-slate-300 uppercase tracking-[0.1em] cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={layer.labels}
-                        onChange={(event) =>
-                          updateLayer(layer.id, {
-                            ...layer,
-                            labels: event.target.checked
-                          })
-                        }
-                        className="rounded border-white/10 bg-slate-900 text-cyan-400 focus:ring-0 cursor-pointer"
-                      />
-                      Labels
-                    </label>
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => moveLayer(layer.id, -1)}
-                        className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
-                        title="Move layer up"
-                      >
-                        <ArrowUp className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveLayer(layer.id, 1)}
-                        className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
-                        title="Move layer down"
-                      >
-                        <ArrowDown className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => zoomToLayer(layer.id)}
-                        className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
-                        title="Zoom to layer bounds"
-                      >
-                        <LocateFixed className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+        {/* Sidebar Tab Switcher */}
+        <div className="flex rounded-2xl bg-slate-950/70 p-1 border border-white/10 shadow-2xl backdrop-blur-xl pointer-events-auto flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSidebarTab('layers');
+              setDrawMode('None');
+            }}
+            className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              activeSidebarTab === 'layers'
+                ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <Layers3 className="h-4 w-4" />
+            <span>Layers</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSidebarTab('analysis');
+              setMarkerModeEnabled(false);
+              setDrawMode('Polygon');
+              setStatusMessage('Click the map to draw a polygon area.');
+            }}
+            className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              activeSidebarTab === 'analysis'
+                ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <Sparkles className="h-4 w-4" />
+            <span>Analysis</span>
+          </button>
         </div>
 
-        {/* Manual Editing Card */}
-        <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
-          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-            <PencilLine className="h-4 w-4 text-cyan-400" />
-            Manual Editing
-          </h2>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Select a mode to interact with the map. Place point markers in custom layers or draw area polygons to calculate stats.
-          </p>
-          
-          {/* Mode Selector */}
-          <div className="flex rounded-2xl bg-slate-900/65 p-1 border border-white/5 shadow-inner mt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setMarkerModeEnabled(false);
-                setDrawMode('None');
-                setStatusMessage('Navigation mode active. Pan, zoom, and select sites.');
-              }}
-              className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                !markerModeEnabled && drawMode === 'None'
-                  ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-              }`}
-            >
-              <Navigation className="h-3.5 w-3.5" />
-              <span>Navigate</span>
-            </button>
-            
-            <button
-              type="button"
-              onClick={() => {
-                setDrawMode('None');
-                if (!activeLayerId && layers[0]?.id) {
-                  setActiveLayerId(layers[0].id);
-                }
-                setMarkerModeEnabled(true);
-                setStatusMessage('Click the map to add a marker to the active layer.');
-              }}
-              className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                markerModeEnabled
-                  ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-              }`}
-            >
-              <MapPin className="h-3.5 w-3.5" />
-              <span>Marker</span>
-            </button>
-            
-            <button
-              type="button"
-              onClick={() => {
-                setMarkerModeEnabled(false);
-                setDrawMode('Polygon');
-                setStatusMessage('Click the map to draw a polygon area.');
-              }}
-              className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                drawMode === 'Polygon'
-                  ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-              }`}
-            >
-              <PencilLine className="h-3.5 w-3.5" />
-              <span>Draw</span>
-            </button>
-          </div>
-
-          {/* Clear drawings button, only shown in Drawing Mode */}
-          {drawMode === 'Polygon' && (
-            <button
-              type="button"
-              onClick={clearDrawings}
-              className="w-full rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors"
-            >
-              Clear Drawn Area
-            </button>
-          )}
-        </div>
-
-        {/* Selected Area Card */}
-        <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
-          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-            <PencilLine className="h-4 w-4 text-cyan-400" />
-            Selected Area
-          </h2>
-
-          {selectedAreaAnalysis ? (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                {areaMetrics?.map(([label, value]) => (
-                  <div key={label} className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2">
-                    <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">{label}</p>
-                    <p className="mt-0.5 text-xs font-bold text-white leading-tight truncate">{value}</p>
-                  </div>
-                ))}
+        {activeSidebarTab === 'layers' && (
+          <>
+            {/* Layer Explorer Card */}
+            <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+                  <Layers3 className="h-4 w-4 text-cyan-400" />
+                  Layer Explorer
+                </h2>
+                <button
+                  onClick={openLayerDialog}
+                  type="button"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-400/10 border border-cyan-400/20 hover:bg-cyan-400/20 px-3 py-1.5 text-xs font-semibold text-cyan-300 transition-all hover:shadow-[0_0_12px_rgba(34,211,238,0.2)]"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Create Layer
+                </button>
               </div>
 
-              <div className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2 text-xs text-slate-300">
-                <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Features Inside</p>
-                <div className="mt-2 space-y-2 max-h-[12vh] overflow-y-auto pr-1 custom-scrollbar">
-                  {selectedAreaAnalysis.featuresInside.length === 0 ? (
-                    <p className="text-[11px] text-slate-400 italic text-center py-1">No features found inside area.</p>
-                  ) : (
-                    selectedAreaAnalysis.featuresInside.slice(0, 10).map((item, index) => (
-                      <div key={`${item.layerId}-${item.name}-${index}`} className="rounded-lg bg-white/5 px-2.5 py-1.5 border border-white/5">
-                        <p className="text-xs font-semibold text-white truncate">{item.name}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">
-                          {item.layerName} · {item.geometryType}
-                        </p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* LULC (Land Use Land Cover) Analysis */}
-              <div className="border-t border-white/10 pt-3 mt-3">
-                <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
-                  <Globe className="h-3.5 w-3.5 text-emerald-400" />
-                  LULC
-                </h3>
-
-                {lulcLoading ? (
-                  <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-xs">
-                    <Loader2 className="h-6 w-6 animate-spin text-emerald-400 mb-2" />
-                    <span>Analyzing land cover...</span>
-                  </div>
-                ) : lulcError ? (
-                  <div className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-xl p-3 text-center">
-                    {lulcError}
-                  </div>
-                ) : lulcData ? (
-                  <div className="space-y-2.5">
-                    {/* Class Stats */}
-                    <div className="space-y-2.5">
-                      {lulcData.classes && lulcData.classes.length > 0 ? (
-                        lulcData.classes.map((cls) => {
-                          const style = LULC_COLORS[cls.className] || { bg: 'bg-slate-500', text: 'text-slate-400' };
-                          return (
-                            <div key={cls.className} className="space-y-1">
-                              <div className="flex items-center justify-between text-[10px]">
-                                <div className="flex items-center gap-1.5">
-                                  <span className={`h-2 w-2 rounded-full ${style.bg}`} />
-                                  <span className="font-semibold text-slate-300">{cls.className}</span>
-                                </div>
-                                <div className="text-right text-slate-400 font-medium">
-                                  <span className="text-white font-bold mr-1">{cls.percentage}%</span>
-                                  <span>({Math.round(cls.area).toLocaleString()} m²)</span>
-                                </div>
-                              </div>
-                              {/* Bar container */}
-                              <div className="h-1.5 w-full bg-slate-900/60 rounded-full overflow-hidden border border-white/5">
-                                <div
-                                  className={`h-full ${style.bg} transition-all duration-500 rounded-full`}
-                                  style={{ width: `${cls.percentage}%` }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <p className="text-[11px] text-slate-400 italic text-center py-1">LULC data not available</p>
-                      )}
-                    </div>
-                  </div>
+              <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar">
+                {layers.length === 0 ? (
+                  <p className="text-xs text-slate-400 leading-relaxed italic text-center py-4 bg-white/5 border border-white/5 rounded-2xl">
+                    No custom layers created. Click "Create Layer" to start manually adding markers.
+                  </p>
                 ) : (
-                  <p className="text-[11px] text-slate-400 italic text-center py-2">No LULC data available.</p>
-                )}
-              </div>
-
-              {/* Live Amenities Discovery */}
-              <div className="border-t border-white/10 pt-3 mt-3">
-                <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
-                  <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
-                  Amenities Nearby
-                </h3>
-                
-                {liveAmenitiesLoading ? (
-                  <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-xs">
-                    <Loader2 className="h-6 w-6 animate-spin text-cyan-400 mb-2" />
-                    <span>Discovering amenities...</span>
-                  </div>
-                ) : liveAmenitiesError ? (
-                  <div className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-xl p-3 text-center">
-                    {liveAmenitiesError}
-                  </div>
-                ) : liveAmenities ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {Object.entries(liveAmenities).map(([category, list]) => {
-                      const isActive = selectedAmenityCategory === category;
-                      const config = AMENITY_CATEGORIES[category] || { icon: Activity, color: 'text-slate-400 bg-slate-400/10' };
-                      const IconComponent = config.icon;
-                      
-                      return (
-                        <button
-                          key={category}
-                          onClick={() => setSelectedAmenityCategory(isActive ? null : category)}
-                          className={`flex items-center justify-between p-2 rounded-xl border text-left transition-all ${
-                            isActive
-                              ? 'bg-cyan-500/10 border-cyan-400/40 shadow-[0_0_12px_rgba(34,211,238,0.1)] text-white'
-                              : 'bg-slate-900/40 border-white/5 hover:border-white/10 hover:bg-slate-900/60 text-slate-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 truncate">
-                            <div className={`p-1 rounded-lg ${isActive ? 'bg-cyan-400/20 text-cyan-300' : config.color} flex-shrink-0`}>
-                              <IconComponent className="h-3.5 w-3.5" />
-                            </div>
-                            <span className="text-[10px] font-semibold truncate leading-tight">{category}</span>
+                  layers.map((layer) => (
+                    <div key={layer.id} className="rounded-2xl border border-white/10 bg-slate-950/80 p-3.5 hover:border-white/20 transition-all">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <input
+                            value={layer.name}
+                            onChange={(event) =>
+                              updateLayer(layer.id, {
+                                ...layer,
+                                name: event.target.value
+                              })
+                            }
+                            className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-400 transition-all font-medium"
+                          />
+                          <div className="mt-2 flex flex-wrap gap-2 text-[10px] uppercase tracking-[0.15em] text-slate-400">
+                            <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">{layer.sourceType}</span>
+                            <span className="bg-white/5 px-2 py-0.5 rounded border border-white/5">{layer.metadata.featureCount} features</span>
                           </div>
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
-                            isActive ? 'bg-cyan-400/20 text-cyan-300' : 'bg-white/5 text-slate-400'
-                          }`}>
-                            {list.length}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-400 italic text-center py-2">No live data loaded.</p>
-                )}
-              </div>
-
-              {/* Local News Feed */}
-              <div className="border-t border-white/10 pt-3 mt-3">
-                <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
-                  <Newspaper className="h-3.5 w-3.5 text-purple-400" />
-                  Local News {localNewsLocation ? `· ${localNewsLocation}` : ''}
-                </h3>
-                
-                {localNewsLoading ? (
-                  <div className="flex items-center gap-2 justify-center py-3 text-slate-400 text-xs">
-                    <Loader2 className="h-4 w-4 animate-spin text-purple-400 mr-2" />
-                    <span>Fetching local updates...</span>
-                  </div>
-                ) : localNews && localNews.length > 0 ? (
-                  <div className="space-y-2 max-h-[14vh] overflow-y-auto pr-1 custom-scrollbar">
-                    {localNews.map((item, index) => (
-                      <a
-                        key={index}
-                        href={item.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block rounded-xl bg-slate-900/40 border border-white/5 hover:border-white/15 hover:bg-slate-900/70 p-2.5 transition-all text-left pointer-events-auto"
-                      >
-                        <p className="text-[11px] font-semibold text-slate-200 line-clamp-2 hover:text-white leading-snug">
-                          {item.title}
-                        </p>
-                        <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1.5">
-                          <span className="font-medium">{item.source}</span>
-                          <span>{item.pubDate}</span>
+                          {activeLayerId === layer.id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDrawMode('None');
+                                setMarkerModeEnabled((current) => !current);
+                                setStatusMessage(
+                                  !markerModeEnabled
+                                    ? `Click the map to add a marker to ${layer.name}.`
+                                    : 'Marker mode disabled.'
+                                );
+                              }}
+                              className={`mt-3 inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-semibold border transition-all ${
+                                markerModeEnabled
+                                  ? 'bg-cyan-400 text-slate-950 border-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.35)]'
+                                  : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10'
+                              }`}
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              {markerModeEnabled ? 'Adding Markers...' : 'Add Marker'}
+                            </button>
+                          )}
                         </div>
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-400 italic text-center py-2">No local news updates found for this area.</p>
+                        <div className="flex flex-col gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setActiveLayerId(layer.id)}
+                            className={`rounded-xl border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.15em] transition-all ${
+                              activeLayerId === layer.id
+                                ? 'border-cyan-400 bg-cyan-400/15 text-cyan-300'
+                                : 'border-white/10 bg-white/5 text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            {activeLayerId === layer.id ? 'Active' : 'Use'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateLayer(layer.id, { ...layer, visible: !layer.visible })}
+                            className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                          >
+                            {layer.visible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeLayer(layer.id)}
+                            className="rounded-xl border border-white/10 bg-white/5 p-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-all"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-3.5 grid grid-cols-2 gap-3 border-t border-white/5 pt-3">
+                        <label className="text-[11px] text-slate-400 uppercase tracking-[0.1em]">
+                          Color
+                          <input
+                            type="color"
+                            value={layer.color}
+                            onChange={(event) =>
+                              updateLayer(layer.id, {
+                                ...layer,
+                                color: event.target.value
+                              })
+                            }
+                            className="mt-1.5 h-8 w-full rounded-xl border border-white/10 bg-transparent cursor-pointer"
+                          />
+                        </label>
+                        <label className="text-[11px] text-slate-400 uppercase tracking-[0.1em]">
+                          Opacity
+                          <input
+                            type="range"
+                            min="0.2"
+                            max="1"
+                            step="0.05"
+                            value={layer.opacity}
+                            onChange={(event) =>
+                              updateLayer(layer.id, {
+                                ...layer,
+                                opacity: Number(event.target.value)
+                              })
+                            }
+                            className="mt-3.5 w-full accent-cyan-400 cursor-pointer"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-white/5 pt-3">
+                        <label className="flex items-center gap-2 text-[11px] text-slate-300 uppercase tracking-[0.1em] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={layer.labels}
+                            onChange={(event) =>
+                              updateLayer(layer.id, {
+                                ...layer,
+                                labels: event.target.checked
+                              })
+                            }
+                            className="rounded border-white/10 bg-slate-900 text-cyan-400 focus:ring-0 cursor-pointer"
+                          />
+                          Labels
+                        </label>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => moveLayer(layer.id, -1)}
+                            className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                            title="Move layer up"
+                          >
+                            <ArrowUp className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveLayer(layer.id, 1)}
+                            className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                            title="Move layer down"
+                          >
+                            <ArrowDown className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => zoomToLayer(layer.id)}
+                            className="rounded-xl border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                            title="Zoom to layer bounds"
+                          >
+                            <LocateFixed className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
-          ) : (
-            <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3 text-xs text-slate-400 italic leading-relaxed text-center">
-              Draw a polygon on the map using "Draw" mode to inspect features in a custom area.
-            </div>
-          )}
-        </div>
 
-        {/* Marker Distance Card */}
-        <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
-          <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-            <Ruler className="h-4 w-4 text-cyan-400" />
-            Marker Distance
-          </h2>
+            {/* Marker Distance Card */}
+            <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
+              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+                <Ruler className="h-4 w-4 text-cyan-400" />
+                Marker Distance
+              </h2>
 
-          <div className="space-y-3">
-            {selectedMarkersForDistance.length === 0 ? (
-              <p className="text-xs text-slate-400 leading-relaxed italic text-center py-2">
-                Select any two markers across layers to measure geodesic distance.
-              </p>
-            ) : (
-              <div className="space-y-2.5">
-                <div className="space-y-2">
-                  <div className="rounded-xl border border-white/5 bg-slate-900/50 p-2.5 flex items-center justify-between">
-                    <div className="truncate flex-1 pr-2">
-                      <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Marker 1</p>
-                      <p className="text-xs font-bold text-white truncate">
-                        {selectedMarkersForDistance[0].name}
-                      </p>
-                    </div>
-                    <span className="text-[9px] uppercase font-semibold text-cyan-300/80 bg-cyan-400/10 px-2 py-0.5 rounded border border-cyan-400/10 max-w-[120px] truncate">
-                      {selectedMarkersForDistance[0].layerName}
-                    </span>
-                  </div>
-
-                  {selectedMarkersForDistance.length === 2 ? (
-                    <>
+              <div className="space-y-3">
+                {selectedMarkersForDistance.length === 0 ? (
+                  <p className="text-xs text-slate-400 leading-relaxed italic text-center py-2">
+                    Select any two markers across layers to measure geodesic distance.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="space-y-2">
                       <div className="rounded-xl border border-white/5 bg-slate-900/50 p-2.5 flex items-center justify-between">
                         <div className="truncate flex-1 pr-2">
-                          <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Marker 2</p>
+                          <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Marker 1</p>
                           <p className="text-xs font-bold text-white truncate">
-                            {selectedMarkersForDistance[1].name}
+                            {selectedMarkersForDistance[0].name}
                           </p>
                         </div>
                         <span className="text-[9px] uppercase font-semibold text-cyan-300/80 bg-cyan-400/10 px-2 py-0.5 rounded border border-cyan-400/10 max-w-[120px] truncate">
-                          {selectedMarkersForDistance[1].layerName}
+                          {selectedMarkersForDistance[0].layerName}
                         </span>
                       </div>
 
-                      <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-center shadow-lg">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-300 font-semibold">Geodesic Distance</p>
-                        <p className="mt-1 text-xl font-bold text-white tracking-wide">
-                          {markerDistance}
-                        </p>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-[11px] text-amber-300/90 italic bg-amber-400/5 border border-amber-400/10 rounded-xl p-2.5 text-center animate-pulse">
-                      Select a second marker on the map...
+                      {selectedMarkersForDistance.length === 2 ? (
+                        <>
+                          <div className="rounded-xl border border-white/5 bg-slate-900/50 p-2.5 flex items-center justify-between">
+                            <div className="truncate flex-1 pr-2">
+                              <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Marker 2</p>
+                              <p className="text-xs font-bold text-white truncate">
+                                {selectedMarkersForDistance[1].name}
+                              </p>
+                            </div>
+                            <span className="text-[9px] uppercase font-semibold text-cyan-300/80 bg-cyan-400/10 px-2 py-0.5 rounded border border-cyan-400/10 max-w-[120px] truncate">
+                              {selectedMarkersForDistance[1].layerName}
+                            </span>
+                          </div>
+
+                          <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-center shadow-lg">
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-300 font-semibold">Geodesic Distance</p>
+                            <p className="mt-1 text-xl font-bold text-white tracking-wide">
+                              {markerDistance}
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-[11px] text-amber-300/90 italic bg-amber-400/5 border border-amber-400/10 rounded-xl p-2.5 text-center animate-pulse">
+                          Select a second marker on the map...
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMarkersForDistance([])}
+                      className="w-full rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors"
+                    >
+                      Clear Distance Selection
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Selected Area Card */}
+        {activeSidebarTab === 'analysis' && (
+          <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
+            <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+              <PencilLine className="h-4 w-4 text-cyan-400" />
+              Selected Area
+            </h2>
+
+            {selectedAreaAnalysis ? (
+              <div className="space-y-3">
+                {/* Analysis Sub-tab Switcher */}
+                <div className="flex rounded-xl bg-slate-900/80 p-1 border border-white/5 shadow-inner">
+                  <button
+                    type="button"
+                    onClick={() => setActiveAnalysisSubTab('lulc')}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                      activeAnalysisSubTab === 'lulc'
+                        ? 'bg-emerald-500 text-slate-950 font-extrabold shadow-sm shadow-emerald-500/20'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                    }`}
+                  >
+                    <Globe className="h-3.5 w-3.5" />
+                    <span>LULC</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveAnalysisSubTab('insights')}
+                    className={`flex-1 rounded-lg py-1.5 text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
+                      activeAnalysisSubTab === 'insights'
+                        ? 'bg-cyan-500 text-slate-950 font-extrabold shadow-sm shadow-cyan-500/20'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                    }`}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Insights</span>
+                  </button>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setSelectedMarkersForDistance([])}
-                  className="w-full rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors"
-                >
-                  Clear Distance Selection
-                </button>
+                {activeAnalysisSubTab === 'lulc' ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      {areaMetrics?.map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2">
+                          <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">{label}</p>
+                          <p className="mt-0.5 text-xs font-bold text-white leading-tight truncate">{value}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2 text-xs text-slate-300">
+                      <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Features Inside</p>
+                      <div className="mt-2 space-y-2 max-h-[12vh] overflow-y-auto pr-1 custom-scrollbar">
+                        {selectedAreaAnalysis.featuresInside.length === 0 ? (
+                          <p className="text-[11px] text-slate-400 italic text-center py-1">No features found inside area.</p>
+                        ) : (
+                          selectedAreaAnalysis.featuresInside.slice(0, 10).map((item, index) => (
+                            <div key={`${item.layerId}-${item.name}-${index}`} className="rounded-lg bg-white/5 px-2.5 py-1.5 border border-white/5">
+                              <p className="text-xs font-semibold text-white truncate">{item.name}</p>
+                              <p className="text-[10px] text-slate-400 mt-0.5">
+                                {item.layerName} · {item.geometryType}
+                              </p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {/* LULC (Land Use Land Cover) Analysis */}
+                    <div className="border-t border-white/10 pt-3 mt-3">
+                      {/* Header + Layer Controls */}
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                          <Globe className="h-3.5 w-3.5 text-emerald-400" />
+                          LULC Layer
+                        </h3>
+                        {lulcData && Object.keys(lulcClassColorMap).length > 0 && (
+                          <div className="flex items-center gap-1.5">
+                            {/* Show/Hide toggle */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = !lulcLayerVisible;
+                                setLulcLayerVisible(next);
+                                lulcLayerRef.current.setVisible(next);
+                              }}
+                              className="rounded-lg border border-white/10 bg-white/5 p-1 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                              title={lulcLayerVisible ? 'Hide LULC Layer' : 'Show LULC Layer'}
+                            >
+                              {lulcLayerVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                            </button>
+                            {/* Zoom to extent */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const extent = lulcSourceRef.current.getExtent();
+                                if (extent && mapRef.current) {
+                                  mapRef.current.getView().fit(extent, { padding: [30, 30, 30, 30], duration: 600 });
+                                }
+                              }}
+                              className="rounded-lg border border-white/10 bg-white/5 p-1 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                              title="Zoom to LULC Extent"
+                            >
+                              <LocateFixed className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Opacity slider */}
+                      {lulcData && Object.keys(lulcClassColorMap).length > 0 && (
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-[9px] uppercase tracking-[0.1em] text-slate-500 whitespace-nowrap">Opacity</span>
+                          <input
+                            type="range" min="0.1" max="1" step="0.05"
+                            value={lulcLayerOpacity}
+                            onChange={(e) => {
+                              const val = Number(e.target.value);
+                              setLulcLayerOpacity(val);
+                              lulcLayerRef.current.setOpacity(val);
+                            }}
+                            className="flex-1 accent-emerald-400 cursor-pointer"
+                          />
+                          <span className="text-[9px] text-slate-400 w-6 text-right">{Math.round(lulcLayerOpacity * 100)}%</span>
+                        </div>
+                      )}
+
+                      {/* Hover tooltip indicator */}
+                      {lulcHoveredClass && (
+                        <div
+                          className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-all"
+                          style={{
+                            borderColor: `${lulcClassColorMap[lulcHoveredClass] || '#94a3b8'}60`,
+                            backgroundColor: `${lulcClassColorMap[lulcHoveredClass] || '#94a3b8'}18`,
+                            color: lulcClassColorMap[lulcHoveredClass] || '#94a3b8'
+                          }}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-sm flex-shrink-0"
+                            style={{ backgroundColor: lulcClassColorMap[lulcHoveredClass] || '#94a3b8' }}
+                          />
+                          Hovering: {lulcHoveredClass}
+                        </div>
+                      )}
+
+                      {/* Click highlight indicator */}
+                      {lulcHighlightedFeature && (
+                        <div
+                          className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-all"
+                          style={{
+                            borderColor: `${lulcClassColorMap[lulcHighlightedFeature] || '#94a3b8'}80`,
+                            backgroundColor: `${lulcClassColorMap[lulcHighlightedFeature] || '#94a3b8'}25`,
+                            color: 'white'
+                          }}
+                        >
+                          <span
+                            className="h-2.5 w-2.5 rounded-sm flex-shrink-0"
+                            style={{ backgroundColor: lulcClassColorMap[lulcHighlightedFeature] || '#94a3b8' }}
+                          />
+                          Selected: <span style={{ color: lulcClassColorMap[lulcHighlightedFeature] }}>{lulcHighlightedFeature}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              lulcSourceRef.current.getFeatures().forEach(f => f.set('_lulcHighlighted', false));
+                              setLulcHighlightedFeature(null);
+                              lulcLayerRef.current.changed();
+                            }}
+                            className="ml-auto text-slate-400 hover:text-white transition-colors"
+                          ><X className="h-3 w-3" /></button>
+                        </div>
+                      )}
+
+                      {lulcLoading ? (
+                        <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-xs">
+                          <Loader2 className="h-6 w-6 animate-spin text-emerald-400 mb-2" />
+                          <span>Analyzing land cover...</span>
+                        </div>
+                      ) : lulcError ? (
+                        <div className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-xl p-3 text-center">
+                          {lulcError}
+                        </div>
+                      ) : lulcData ? (
+                        <div className="space-y-2">
+                          {lulcData.classes && lulcData.classes.length > 0 ? (
+                            lulcData.classes.map((cls) => {
+                              // === Fully dynamic — no hardcoded class names ===
+                              const hexColor = lulcClassColorMap[cls.className] || '#94a3b8';
+                              return (
+                                <div key={cls.className} className="space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <div className="flex items-center gap-1.5">
+                                      {/* Colored swatch — dynamically colored */}
+                                      <span
+                                        className="h-2.5 w-2.5 rounded-sm flex-shrink-0"
+                                        style={{ backgroundColor: hexColor }}
+                                      />
+                                      <span className="font-semibold text-slate-300">{cls.className}</span>
+                                    </div>
+                                    <div className="text-right text-slate-400 font-medium">
+                                      <span className="text-white font-bold mr-1">{cls.percentage}%</span>
+                                      <span>({Math.round(cls.area).toLocaleString()} m²)</span>
+                                    </div>
+                                  </div>
+                                  {/* Progress bar — inline style for dynamic color */}
+                                  <div className="h-1.5 w-full bg-slate-900/60 rounded-full overflow-hidden border border-white/5">
+                                    <div
+                                      className="h-full transition-all duration-500 rounded-full"
+                                      style={{ width: `${cls.percentage}%`, backgroundColor: hexColor }}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <p className="text-[11px] text-slate-400 italic text-center py-1">LULC data not available</p>
+                          )}
+
+                          {/* Auto-generated Legend */}
+                          {Object.keys(lulcClassColorMap).length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-white/5">
+                              <p className="text-[9px] uppercase tracking-[0.15em] text-slate-500 mb-2">Legend</p>
+                              <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+                                {Object.entries(lulcClassColorMap).map(([name, color]) => (
+                                  <div key={name} className="flex items-center gap-1">
+                                    <span
+                                      className="inline-block h-2.5 w-2.5 rounded-sm flex-shrink-0"
+                                      style={{ backgroundColor: color }}
+                                    />
+                                    <span className="text-[10px] text-slate-300">{name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic text-center py-2">No LULC data available.</p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Live Amenities Discovery */}
+                    <div className="border-t border-white/10 pt-3">
+                      <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
+                        <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
+                        Amenities Nearby
+                      </h3>
+                      
+                      {liveAmenitiesLoading ? (
+                        <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-xs">
+                          <Loader2 className="h-6 w-6 animate-spin text-cyan-400 mb-2" />
+                          <span>Discovering amenities...</span>
+                        </div>
+                      ) : liveAmenitiesError ? (
+                        <div className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-xl p-3 text-center">
+                          {liveAmenitiesError}
+                        </div>
+                      ) : liveAmenities ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          {Object.entries(liveAmenities).map(([category, list]) => {
+                            const isActive = selectedAmenityCategory === category;
+                            const config = AMENITY_CATEGORIES[category] || { icon: Activity, color: 'text-slate-400 bg-slate-400/10' };
+                            const IconComponent = config.icon;
+                            
+                            return (
+                              <button
+                                key={category}
+                                onClick={() => setSelectedAmenityCategory(isActive ? null : category)}
+                                className={`flex items-center justify-between p-2 rounded-xl border text-left transition-all ${
+                                  isActive
+                                    ? 'bg-cyan-500/10 border-cyan-400/40 shadow-[0_0_12px_rgba(34,211,238,0.1)] text-white'
+                                    : 'bg-slate-900/40 border-white/5 hover:border-white/10 hover:bg-slate-900/60 text-slate-300'
+                                }`}
+                              >
+                                <div className="flex items-center gap-1.5 truncate">
+                                  <div className={`p-1 rounded-lg ${isActive ? 'bg-cyan-400/20 text-cyan-300' : config.color} flex-shrink-0`}>
+                                    <IconComponent className="h-3.5 w-3.5" />
+                                  </div>
+                                  <span className="text-[10px] font-semibold truncate leading-tight">{category}</span>
+                                </div>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                                  isActive ? 'bg-cyan-400/20 text-cyan-300' : 'bg-white/5 text-slate-400'
+                                }`}>
+                                  {list.length}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic text-center py-2">No live data loaded.</p>
+                      )}
+                    </div>
+
+                    {/* Local News Feed */}
+                    <div className="border-t border-white/10 pt-3 mt-3">
+                      <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
+                        <Newspaper className="h-3.5 w-3.5 text-purple-400" />
+                        Local News {localNewsLocation ? `· ${localNewsLocation}` : ''}
+                      </h3>
+                      
+                      {localNewsLoading ? (
+                        <div className="flex items-center gap-2 justify-center py-3 text-slate-400 text-xs">
+                          <Loader2 className="h-4 w-4 animate-spin text-purple-400 mr-2" />
+                          <span>Fetching local updates...</span>
+                        </div>
+                      ) : localNews && localNews.length > 0 ? (
+                        <div className="space-y-2 max-h-[14vh] overflow-y-auto pr-1 custom-scrollbar">
+                          {localNews.map((item, index) => (
+                            <a
+                              key={index}
+                              href={item.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block rounded-xl bg-slate-900/40 border border-white/5 hover:border-white/15 hover:bg-slate-900/70 p-2.5 transition-all text-left pointer-events-auto"
+                            >
+                              <p className="text-[11px] font-semibold text-slate-200 line-clamp-2 hover:text-white leading-snug">
+                                {item.title}
+                              </p>
+                              <div className="flex items-center justify-between text-[9px] text-slate-400 mt-1.5">
+                                <span className="font-medium">{item.source}</span>
+                                  <span>{item.pubDate}</span>
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic text-center py-2">No local news updates found for this area.</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3 text-xs text-slate-400 italic leading-relaxed text-center">
+                Draw a polygon on the map using "Draw" mode to inspect features in a custom area.
               </div>
             )}
           </div>
-        </div>
+        )}
       </aside>
+
+      {/* Floating vertical toolbar on the right, below the zoom controls */}
+      <div className="fixed top-[210px] right-6 z-30 flex flex-col gap-2 p-1.5 rounded-[20px] bg-slate-950/75 border border-white/10 shadow-2xl backdrop-blur-xl pointer-events-auto">
+        <button
+          type="button"
+          onClick={() => {
+            setMarkerModeEnabled(false);
+            setDrawMode('None');
+            setStatusMessage('Navigation mode active. Pan, zoom, and select sites.');
+          }}
+          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            !markerModeEnabled && drawMode === 'None'
+              ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+          }`}
+          title="Navigation Mode"
+        >
+          <Navigation className="h-4 w-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setDrawMode('None');
+            if (!activeLayerId && layers[0]?.id) {
+              setActiveLayerId(layers[0].id);
+            }
+            setMarkerModeEnabled(true);
+            setStatusMessage('Click the map to add a marker to the active layer.');
+          }}
+          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            markerModeEnabled
+              ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+          }`}
+          title="Add Marker"
+        >
+          <MapPin className="h-4 w-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setMarkerModeEnabled(false);
+            setDrawMode('Polygon');
+            setStatusMessage('Click the map to draw a polygon area.');
+          }}
+          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            drawMode === 'Polygon'
+              ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+          }`}
+          title="Draw Area"
+        >
+          <PencilLine className="h-4 w-4" />
+        </button>
+
+        {drawMode === 'Polygon' && (
+          <button
+            type="button"
+            onClick={() => {
+              clearDrawings();
+              setStatusMessage('Drawn area cleared.');
+            }}
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-white/5 transition-all"
+            title="Clear Drawings"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
 
       {/* Floating coordinates and status indicators at bottom right */}
       <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-2 pointer-events-none select-none">
