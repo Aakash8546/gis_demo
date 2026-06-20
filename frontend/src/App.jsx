@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map from 'ol/Map';
 import View from 'ol/View';
 import TileLayer from 'ol/layer/Tile';
@@ -18,6 +18,8 @@ import VectorTileSource from 'ol/source/VectorTile';
 import MVT from 'ol/format/MVT';
 import GeoJSON from 'ol/format/GeoJSON';
 import { fromLonLat, toLonLat } from 'ol/proj';
+import TileWMS from 'ol/source/TileWMS';
+import CesiumMap from './components/CesiumMap';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import { Fill, Stroke, Style, Circle as CircleStyle, Text } from 'ol/style';
 import {
@@ -490,6 +492,15 @@ function App() {
   });
   const baseSelection = useRef('dark');
 
+  const [mapMode, setMapMode] = useState('2D');
+  const [elevationQueryMode, setElevationQueryMode] = useState(false);
+  const [elevationQueryLoading, setElevationQueryLoading] = useState(false);
+  const [elevationQueryResult, setElevationQueryResult] = useState(null);
+  const [mapZoom, setMapZoom] = useState(13);
+  const [mapCenter, setMapCenter] = useState([82.9739, 25.3176]);
+  
+  const elevationQueryModeRef = useRef(elevationQueryMode);
+
   const [layers, setLayers] = useState([]);
   const [selectedMarkersForDistance, setSelectedMarkersForDistance] = useState([]);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
@@ -801,6 +812,98 @@ out center;`;
     }
   };
 
+  // Auto-dismiss status messages after 5 seconds
+  const statusTimeoutRef = useRef(null);
+  const showStatus = useCallback((message) => {
+    setStatusMessage(message);
+    if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+    if (message) {
+      statusTimeoutRef.current = setTimeout(() => setStatusMessage(''), 5000);
+    }
+  }, []);
+
+  const queryPointElevation = useCallback(async (lonLat) => {
+    const [lon, lat] = lonLat;
+    showStatus(`Querying elevation at ${lon.toFixed(4)}°, ${lat.toFixed(4)}°...`);
+    setElevationQueryLoading(true);
+    setElevationQueryResult(null);
+    try {
+      const res = await fetch(`/api/terrain/query?lon=${lon}&lat=${lat}`);
+      if (!res.ok) throw new Error('API error');
+      const data = await res.json();
+      setElevationQueryResult(data);
+      if (data.elevation !== null) {
+        showStatus(`Elevation: ${data.elevation.toFixed(1)}m, Slope: ${data.slope ? data.slope.toFixed(1) : 0.0}%`);
+      } else {
+        showStatus('Coordinate is outside the DEM coverage area.');
+      }
+    } catch (err) {
+      console.error('Terrain query error:', err);
+      showStatus('Terrain query failed. Verify backend connectivity.');
+    } finally {
+      setElevationQueryLoading(false);
+    }
+  }, [showStatus]);
+
+  const handleCesiumPointSelected = useCallback((coordinates) => {
+    setSelectedCoordinates(coordinates);
+    if (elevationQueryModeRef.current) {
+      queryPointElevation(coordinates);
+    }
+  }, [queryPointElevation]);
+
+  // Auto-clear the elevation popup whenever the user exits elevation query mode
+  useEffect(() => {
+    if (!elevationQueryMode) {
+      setElevationQueryResult(null);
+      selectedPointSourceRef.current?.clear();
+    }
+  }, [elevationQueryMode]);
+
+
+
+  const handleMapModeToggle = useCallback(() => {
+    if (mapMode === '3D') {
+      if (window.cesiumViewer && window.Cesium) {
+        const camera = window.cesiumViewer.camera;
+        const cartographic = window.cesiumViewer.scene.globe.ellipsoid.cartesianToCartographic(camera.position);
+        const lon = window.Cesium.Math.toDegrees(cartographic.longitude);
+        const lat = window.Cesium.Math.toDegrees(cartographic.latitude);
+        const height = cartographic.height;
+        // Guard: height could be 0 or negative from Cesium underground positions
+        const rawZoom = isFinite(height) && height > 0 ? Math.log2(35000000 / height) : 13;
+        const zoomLevel = Math.max(2, Math.min(20, rawZoom));
+
+        // Validate coordinates before using them
+        const safeLon = isFinite(lon) ? lon : 82.9739;
+        const safeLat = isFinite(lat) ? lat : 25.3176;
+
+        setMapCenter([safeLon, safeLat]);
+        setMapZoom(zoomLevel);
+
+        // Directly update OL view without triggering map re-init
+        if (mapRef.current) {
+          const view = mapRef.current.getView();
+          view.setCenter(fromLonLat([safeLon, safeLat]));
+          view.setZoom(zoomLevel);
+        }
+      }
+      setMapMode('2D');
+      showStatus('Switched to 2D OpenLayers view.');
+    } else {
+      if (mapRef.current) {
+        const view = mapRef.current.getView();
+        const center = view.getCenter();
+        const centerCoords = center ? toLonLat(center) : [82.9739, 25.3176];
+        const zoomLevel = view.getZoom() ?? 13;
+        setMapCenter(centerCoords);
+        setMapZoom(zoomLevel);
+      }
+      setMapMode('3D');
+      showStatus('Switched to 3D Cesium view with Copernicus DEM Terrain.');
+    }
+  }, [mapMode, showStatus]);
+
   const selectedAreaPolygon = useMemo(() => {
     return drawSourceRef.current
       .getFeatures()
@@ -812,6 +915,49 @@ out center;`;
     if (!selectedAreaPolygon) return null;
     return getPolygonMetrics(selectedAreaPolygon);
   }, [selectedAreaPolygon]);
+
+  const selectedAreaCoords = useMemo(() => {
+    if (!selectedAreaPolygon) return null;
+    const geom = selectedAreaPolygon.getGeometry();
+    if (!geom) return null;
+    const rings = geom.getCoordinates();
+    if (!rings || rings.length === 0) return null;
+    const coords = rings[0]; // Outer ring coordinates (EPSG:3857)
+    if (!coords) return null;
+    return coords.map((c) => toLonLat(c));
+  }, [selectedAreaPolygon]);
+
+  const cesiumMarkers = useMemo(() => {
+    const list = [];
+    (layers || []).forEach((layer) => {
+      if (!layer || !layer.visible || !layer.geojson) return;
+      let geojsonObj = layer.geojson;
+      if (typeof geojsonObj === 'string') {
+        try {
+          geojsonObj = JSON.parse(geojsonObj);
+        } catch (e) {
+          console.error('Error parsing layer geojson:', e);
+          return;
+        }
+      }
+      const features = geojsonObj?.features || [];
+      features.forEach((feature) => {
+        if (feature && feature.geometry && feature.geometry.type === 'Point') {
+          const coords = feature.geometry.coordinates; // Lon, Lat
+          if (Array.isArray(coords) && coords.length >= 2) {
+            list.push({
+              id: feature.id || `${layer.id}-${list.length}`,
+              coordinates: coords,
+              name: feature.properties?.name || 'Unnamed Marker',
+              color: layer.color || '#c084fc',
+              layerName: layer.name
+            });
+          }
+        }
+      });
+    });
+    return list;
+  }, [layers]);
 
   useEffect(() => {
     if (!selectedAreaMetrics) {
@@ -855,58 +1001,58 @@ out center;`;
     }
   };
 
-  const updateCityName = useMemo(() => {
-    let timeoutId = null;
-    return (lonLat) => {
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(async () => {
-        const [lon, lat] = lonLat;
-        // Instant bounding box detection for Varanasi (helps offline and startup)
-        if (lon >= 82.85 && lon <= 83.15 && lat >= 25.20 && lat <= 25.40) {
-          setCurrentCity('Varanasi');
-          return;
-        }
+  // Use a stable ref to hold the debounce timer for city name lookups
+  const cityNameTimerRef = useRef(null);
+  const updateCityName = useCallback((lonLat) => {
+    if (cityNameTimerRef.current) clearTimeout(cityNameTimerRef.current);
+    cityNameTimerRef.current = setTimeout(async () => {
+      const [lon, lat] = lonLat;
+      // Instant bounding box detection for Varanasi (helps offline and startup)
+      if (lon >= 82.85 && lon <= 83.15 && lat >= 25.20 && lat <= 25.40) {
+        setCurrentCity('Varanasi');
+        return;
+      }
 
-        const cacheKey = `${lon.toFixed(3)}_${lat.toFixed(3)}`;
-        if (cityCache.current[cacheKey]) {
-          setCurrentCity(cityCache.current[cacheKey]);
-          return;
-        }
+      const cacheKey = `${lon.toFixed(3)}_${lat.toFixed(3)}`;
+      if (cityCache.current[cacheKey]) {
+        setCurrentCity(cityCache.current[cacheKey]);
+        return;
+      }
 
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12`);
-          const data = await res.json();
-          if (data && data.address) {
-            const resolvedCity = data.address.city || 
-                                 data.address.town || 
-                                 data.address.village || 
-                                 data.address.suburb || 
-                                 data.address.city_district || 
-                                 data.address.state_district || 
-                                 data.address.county || 
-                                 'Varanasi';
-            cityCache.current[cacheKey] = resolvedCity;
-            setCurrentCity(resolvedCity);
-          }
-        } catch (err) {
-          console.warn("Reverse geocoding failed, falling back to default.", err);
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12`);
+        const data = await res.json();
+        if (data && data.address) {
+          const resolvedCity = data.address.city || 
+                               data.address.town || 
+                               data.address.village || 
+                               data.address.suburb || 
+                               data.address.city_district || 
+                               data.address.state_district || 
+                               data.address.county || 
+                               'Varanasi';
+          cityCache.current[cacheKey] = resolvedCity;
+          setCurrentCity(resolvedCity);
         }
-      }, 800);
-    };
+      } catch (err) {
+        console.warn("Reverse geocoding failed, falling back to default.", err);
+      }
+    }, 800);
   }, []);
 
 
-  const mapCenter = useMemo(() => {
-    if (selectedCoordinates) {
-      return selectedCoordinates;
-    }
-    return [82.9739, 25.3176];
-  }, [selectedCoordinates]);
+  useEffect(() => {
+    elevationQueryModeRef.current = elevationQueryMode;
+  }, [elevationQueryMode]);
+
+  // NOTE: selectedCoordinates no longer drives mapCenter to prevent the
+  // map useEffect from re-running (and re-creating the OL map) on every click.
 
   useEffect(() => {
     async function loadLayers() {
       setLayers([]);
       setStatusMessage('Create a layer and add markers to begin.');
+      // Note: initial status intentionally persists as an onboarding hint.
     }
 
     loadLayers();
@@ -928,7 +1074,7 @@ out center;`;
     showHeatmapRef.current = showHeatmap;
   }, [showHeatmap]);
 
-  const handleSearch = async (e) => {
+  const handleSearch = useCallback(async (e) => {
     e.preventDefault();
     if (!searchQuery.trim() || !mapRef.current) return;
     
@@ -961,6 +1107,8 @@ out center;`;
         duration: 1200
       });
       
+      setMapCenter([lon, lat]);
+      setMapZoom(14);
       setSelectedCoordinates([lon, lat]);
       selectedPointSourceRef.current.clear();
       const geom = new Point(coords);
@@ -975,24 +1123,30 @@ out center;`;
       const data = await res.json();
       if (data && data.length > 0) {
         const { lon, lat } = data[0];
-        const coords = fromLonLat([parseFloat(lon), parseFloat(lat)]);
-        
+        const numericLon = parseFloat(lon);
+        const numericLat = parseFloat(lat);
+        const coords = fromLonLat([numericLon, numericLat]);
         mapRef.current.getView().animate({
           center: coords,
           zoom: 13,
           duration: 1500
         });
+        setMapCenter([numericLon, numericLat]);
+        setMapZoom(13);
+        showStatus(`Found: ${searchQuery}`);
       } else {
-        alert("Location not found.");
+        showStatus('Location not found. Try entering coordinates like "25.3176, 82.9739".');
       }
     } catch (err) {
-      console.error("Search error", err);
-      alert("Search failed. If you are offline, please enter coordinates directly (e.g. '25.3176, 82.9739').");
+      console.error('Search error', err);
+      showStatus('Search failed. Try entering coordinates directly (e.g. "25.3176, 82.9739").');
     } finally {
       setIsSearching(false);
     }
-  };
+  }, [searchQuery, showStatus]);
 
+  // The map is only created ONCE (no deps on mapCenter or layers to prevent re-init).
+  // Layer management is handled by a separate useEffect.
   useEffect(() => {
     if (mapRef.current || !mapElementRef.current || !tooltipRef.current || !hoverTooltipRef.current) {
       return;
@@ -1133,10 +1287,19 @@ out center;`;
       }
     });
 
+    // Single consolidated click handler — prevents duplicate execution from both 'singleclick' + 'click'
     map.on('singleclick', (event) => {
       const coordinates = toLonLat(event.coordinate);
       setSelectedCoordinates(coordinates);
       tooltipOverlay.setPosition(event.coordinate);
+
+      if (elevationQueryModeRef.current) {
+        queryPointElevation(coordinates);
+        selectedPointSourceRef.current.clear();
+        const geom = new Point(event.coordinate);
+        selectedPointSourceRef.current.addFeature(new Feature({ geometry: geom }));
+        return;
+      }
 
       if (markerModeRef.current) {
         openFeatureDialog(coordinates);
@@ -1200,12 +1363,6 @@ out center;`;
       selectedPointSourceRef.current.addFeature(new Feature({ geometry: geom }));
     });
 
-    map.on('click', (event) => {
-      const coordinate = toLonLat(event.coordinate);
-      setSelectedCoordinates(coordinate);
-      tooltipOverlay.setPosition(event.coordinate);
-    });
-
     map.on('moveend', () => {
       const center = toLonLat(map.getView().getCenter());
       updateCityName(center);
@@ -1223,7 +1380,12 @@ out center;`;
         source: drawSourceRef.current
       })
     );
-  }, [layers, mapCenter]);
+  // IMPORTANT: This effect must NOT depend on mapCenter or layers.
+  // - mapCenter is only used to seed the initial view once at mount time (L1184).
+  // - Layer changes are handled separately in the layer-sync useEffect below.
+  // Adding either as a dep causes the entire OL map to be destroyed and re-created on every click.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!mapRef.current) {
@@ -1296,7 +1458,9 @@ out center;`;
     });
 
     const sortedLayers = [...layers].sort((a, b) => a.order - b.order);
-    const baseLayersCount = 6; // dark, light, satellite, satelliteLabels, varanasi_mbtiles, varanasi_pmtiles
+    // Count actual base layers dynamically: basemaps
+    // This prevents silent breakage when basemap layers are added or removed.
+    const baseLayersCount = Object.keys(basemapLayersRef.current).length;
 
     sortedLayers.forEach((layer, index) => {
       const newFeatures = readGeoJsonFeatures(layer.geojson);
@@ -1373,21 +1537,7 @@ out center;`;
   }, [layers, showHeatmap]);
 
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
-
-    const overlayLayer = map
-      .getLayers()
-      .getArray()
-      .find((layer) => layer.get('kind') === 'draw');
-
-    if (!overlayLayer) {
-      return;
-    }
-  }, []);
+  // (Removed dead useEffect that found the draw layer but never used it)
 
   useEffect(() => {
     const handleDrawChange = (event) => {
@@ -1494,12 +1644,20 @@ out center;`;
     drawSourceRef.current.clear();
     highlightSourceRef.current.clear();
     lulcSourceRef.current.clear();
+    // Reset all analysis state — prevents stale data from showing for old polygon
     setLiveAmenities(null);
+    setLiveAmenitiesError('');
     setLocalNews([]);
     setLocalNewsLocation('');
     setSelectedAmenityCategory(null);
     setHighlightedLiveAmenity(null);
-    setStatusMessage('Selected area cleared.');
+    setLulcData(null);
+    setLulcError('');
+    setLulcHoveredClass(null);
+    setLulcHighlightedFeature(null);
+    lulcColorMapRef.current = {};
+    setLulcClassColorMap({});
+    showStatus('Selected area cleared.');
   }
 
   function openLayerDialog() {
@@ -1545,7 +1703,7 @@ out center;`;
       setLayers((current) => [...current, newLayer]);
       setActiveLayerId(layerId);
       setLayerDialogOpen(false);
-      setStatusMessage(`Created ${layerName}. Use marker mode to add features.`);
+      showStatus(`Created ${layerName}. Use marker mode to add features.`);
     } catch (error) {
       setLayerDialogError('Please enter a layer name before creating it.');
     }
@@ -1554,7 +1712,7 @@ out center;`;
   function openFeatureDialog(coordinates) {
     const layerId = activeLayerIdRef.current || layersRef.current[0]?.id;
     if (!layerId) {
-      setStatusMessage('Select or create a layer before adding markers.');
+      showStatus('Select or create a layer before adding markers.');
       return;
     }
 
@@ -1606,7 +1764,7 @@ out center;`;
     });
 
     setFeatureDialogOpen(false);
-    setStatusMessage(`Added ${name} to ${layer.name}.`);
+    showStatus(`Added ${name} to ${layer.name}`);
   }
 
 
@@ -1669,7 +1827,22 @@ out center;`;
     <div className="relative w-screen h-screen overflow-hidden bg-[#07111f] text-slate-100 select-none">
       {/* Fullscreen Map Canvas */}
       <div className="absolute inset-0 w-full h-full z-0 map-shell">
-        <div ref={mapElementRef} className="h-full w-full" />
+        <div 
+          ref={mapElementRef} 
+          className="h-full w-full" 
+          style={{ display: mapMode === '2D' ? 'block' : 'none' }}
+        />
+        <CesiumMap
+          center={mapCenter}
+          zoom={mapZoom}
+          visible={mapMode === '3D'}
+          onPointSelected={handleCesiumPointSelected}
+          basemap={basemap}
+          selectedCoordinates={selectedCoordinates}
+          selectedMarkersForDistance={selectedMarkersForDistance}
+          selectedAreaCoords={selectedAreaCoords}
+          markers={cesiumMarkers}
+        />
       </div>
 
       {/* Floating Header */}
@@ -1764,6 +1937,8 @@ out center;`;
             onClick={() => {
               setActiveSidebarTab('layers');
               setDrawMode('None');
+              // Clear distance selection when leaving layers tab
+              setSelectedMarkersForDistance([]);
             }}
             className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               activeSidebarTab === 'layers'
@@ -1780,7 +1955,7 @@ out center;`;
               setActiveSidebarTab('analysis');
               setMarkerModeEnabled(false);
               setDrawMode('Polygon');
-              setStatusMessage('Click the map to draw a polygon area.');
+              showStatus('Click the map to draw a polygon area.');
             }}
             className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               activeSidebarTab === 'analysis'
@@ -1842,7 +2017,7 @@ out center;`;
                               onClick={() => {
                                 setDrawMode('None');
                                 setMarkerModeEnabled((current) => !current);
-                                setStatusMessage(
+                                showStatus(
                                   !markerModeEnabled
                                     ? `Click the map to add a marker to ${layer.name}.`
                                     : 'Marker mode disabled.'
@@ -2387,11 +2562,12 @@ out center;`;
           type="button"
           onClick={() => {
             setMarkerModeEnabled(false);
+            setElevationQueryMode(false);
             setDrawMode('None');
-            setStatusMessage('Navigation mode active. Pan, zoom, and select sites.');
+            showStatus('Navigation mode active. Pan, zoom, and select sites.');
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
-            !markerModeEnabled && drawMode === 'None'
+            !markerModeEnabled && drawMode === 'None' && !elevationQueryMode
               ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
@@ -2404,11 +2580,12 @@ out center;`;
           type="button"
           onClick={() => {
             setDrawMode('None');
+            setElevationQueryMode(false);
             if (!activeLayerId && layers[0]?.id) {
               setActiveLayerId(layers[0].id);
             }
             setMarkerModeEnabled(true);
-            setStatusMessage('Click the map to add a marker to the active layer.');
+            showStatus('Click the map to add a marker to the active layer.');
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
             markerModeEnabled
@@ -2424,8 +2601,9 @@ out center;`;
           type="button"
           onClick={() => {
             setMarkerModeEnabled(false);
+            setElevationQueryMode(false);
             setDrawMode('Polygon');
-            setStatusMessage('Click the map to draw a polygon area.');
+            showStatus('Click the map to draw a polygon area.');
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
             drawMode === 'Polygon'
@@ -2437,13 +2615,41 @@ out center;`;
           <PencilLine className="h-4 w-4" />
         </button>
 
-        {drawMode === 'Polygon' && (
+        <button
+          type="button"
+          onClick={() => {
+            setMarkerModeEnabled(false);
+            setDrawMode('None');
+            setElevationQueryMode(true);
+            showStatus('Elevation Query mode: click any point on the map to query DEM elevation & slope.');
+          }}
+          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            elevationQueryMode
+              ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+          }`}
+          title="Elevation Query"
+        >
+          <LocateFixed className="h-4 w-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={handleMapModeToggle}
+          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            mapMode === '3D'
+              ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+          }`}
+          title={mapMode === '3D' ? 'Switch to 2D Map' : 'Switch to 3D Globe'}
+        >
+          <Globe className="h-4 w-4" />
+        </button>
+
+        {(drawMode === 'Polygon' || drawSourceRef.current?.getFeatures().length > 0) && (
           <button
             type="button"
-            onClick={() => {
-              clearDrawings();
-              setStatusMessage('Drawn area cleared.');
-            }}
+            onClick={() => clearDrawings()}
             className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-white/5 transition-all"
             title="Clear Drawings"
           >
@@ -2467,6 +2673,84 @@ out center;`;
           </div>
         )}
       </div>
+
+      {/* Floating Elevation Query Details Panel — positioned responsively */}
+      {elevationQueryResult && (
+        <div className="fixed bottom-6 left-6 md:left-[410px] z-30 w-[300px] pointer-events-auto rounded-[24px] border border-cyan-500/30 bg-slate-950/90 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-cyan-300">Elevation Query</p>
+              <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                {elevationQueryResult.latitude.toFixed(5)}° N, {elevationQueryResult.longitude.toFixed(5)}° E
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setElevationQueryResult(null);
+                selectedPointSourceRef.current.clear();
+              }}
+              className="rounded-lg border border-white/10 bg-white/5 p-1 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+
+          {elevationQueryResult.elevation !== null ? (
+            <div className="space-y-3">
+              {/* Elevation */}
+              <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[10px] uppercase tracking-[0.1em] text-slate-400">Elevation</span>
+                  <span className="text-lg font-bold text-white">{elevationQueryResult.elevation.toFixed(1)} m</span>
+                </div>
+                {/* Elevation visual indicator relative to Varanasi bounds (~50m to ~223m) */}
+                <div className="h-1.5 w-full bg-slate-950/60 rounded-full overflow-hidden mt-2 border border-white/5">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-400 to-cyan-400 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${Math.max(0, Math.min(100, ((elevationQueryResult.elevation - 50) / 173) * 100))}%`
+                    }}
+                  />
+                </div>
+                <div className="flex justify-between text-[8px] text-slate-500 mt-1">
+                  <span>Min: 50m</span>
+                  <span>Max: 223m</span>
+                </div>
+              </div>
+
+              {/* Slope */}
+              <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+                <div className="flex justify-between items-baseline">
+                  <span className="text-[10px] uppercase tracking-[0.1em] text-slate-400">Slope</span>
+                  <span className="text-lg font-bold text-white">
+                    {elevationQueryResult.slope !== null ? `${elevationQueryResult.slope.toFixed(2)}%` : '0.00%'}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex items-center gap-1.5">
+                  <span className={`inline-block h-2 w-2 rounded-full ${
+                    (elevationQueryResult.slope || 0) < 5
+                      ? 'bg-emerald-400'
+                      : (elevationQueryResult.slope || 0) < 15
+                        ? 'bg-amber-400'
+                        : 'bg-rose-400'
+                  }`} />
+                  <span className="text-[10px] text-slate-300">
+                    {(elevationQueryResult.slope || 0) < 5
+                      ? 'Flat / Gentle Slope'
+                      : (elevationQueryResult.slope || 0) < 15
+                        ? 'Moderate Slope'
+                        : 'Steep Slope'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 italic text-center py-2">
+              Coordinate is outside the Copernicus DEM dataset coverage bounds.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Programmatic Tooltip Overlays (OpenLayers) */}
       <div className="hidden">
