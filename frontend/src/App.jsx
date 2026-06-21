@@ -722,18 +722,10 @@ out center;`;
     setLocalNewsLocation(cityName);
 
     try {
-      const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(cityName)}&hl=en-IN&gl=IN&ceid=IN:en`;
-      const rss2jsonUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
-      const newsRes = await fetch(rss2jsonUrl);
+      const newsRes = await fetch(`/api/news?query=${encodeURIComponent(cityName)}`);
       const newsData = await newsRes.json();
-      if (newsData && newsData.items) {
-        const parsedNews = newsData.items.slice(0, 5).map(item => ({
-          title: item.title,
-          link: item.link,
-          source: item.source || 'News Update',
-          pubDate: item.pubDate ? new Date(item.pubDate).toLocaleDateString() : 'Recent'
-        }));
-        setLocalNews(parsedNews);
+      if (Array.isArray(newsData)) {
+        setLocalNews(newsData);
       } else {
         setLocalNews([]);
       }
