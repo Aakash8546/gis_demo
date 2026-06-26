@@ -13,6 +13,7 @@ import HeatMapLayer from 'ol/layer/Heatmap';
 import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
 import LineString from 'ol/geom/LineString';
+import Circle from 'ol/geom/Circle';
 import VectorTileLayer from 'ol/layer/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
 import MVT from 'ol/format/MVT';
@@ -33,6 +34,7 @@ import {
   LocateFixed,
   MapPin,
   Navigation,
+  Brain,
   PencilLine,
   Plus,
   Trash2,
@@ -143,6 +145,140 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+const RELATION_TYPE_LABELS = {
+  CONNECTED_TO: 'Direct Access',
+  ADJACENT_TO: 'Adjacent To',
+  CONTAINS: 'Contains',
+  FLOODS: 'Flood Impact Zone',
+  IMPACTS: 'Environmental Impact',
+  INTERSECTS: 'Spatial Intersection',
+  NEAR: 'Proximity (Near)',
+  SERVES: 'Service Provider For',
+  SUPPLIES: 'Water Supply Source',
+  PART_OF: 'Administrative Part Of',
+  WITHIN: 'Located Within'
+};
+
+const groupRelationships = (relationships, entities) => {
+  const groups = {
+    healthEducation: { title: 'Health & Education', icon: '🏥', relations: [] },
+    environmentWater: { title: 'Environment & Water Systems', icon: '🌲', relations: [] },
+    transportation: { title: 'Transportation & Connectivity', icon: '🛤️', relations: [] },
+    settlementsIndustry: { title: 'Settlements & Industry', icon: '🏘️', relations: [] },
+    other: { title: 'General Proximity (NEAR)', icon: '📍', relations: [] }
+  };
+
+  relationships.forEach(rel => {
+    const targetNode = entities.find(e => e.id === rel.target);
+    const targetType = targetNode?.type || '';
+    const relType = rel.relation || '';
+
+    if (targetType === 'Hospital' || targetType === 'School' || relType === 'SERVES') {
+      groups.healthEducation.relations.push(rel);
+    } else if (targetType === 'River' || targetType === 'WaterBody' || targetType === 'Forest' || targetType === 'FloodZone' || 
+               relType === 'FLOODS' || relType === 'SUPPLIES' || relType === 'IMPACTS') {
+      groups.environmentWater.relations.push(rel);
+    } else if (targetType === 'Road' || relType === 'CONNECTED_TO' || relType === 'ADJACENT_TO' || relType === 'INTERSECTS') {
+      groups.transportation.relations.push(rel);
+    } else if (targetType === 'Village' || targetType === 'UrbanArea' || targetType === 'Building' || targetType === 'Parcel') {
+      groups.settlementsIndustry.relations.push(rel);
+    } else {
+      groups.other.relations.push(rel);
+    }
+  });
+
+  return groups;
+};
+
+const calculateSuitabilityDetails = (summary) => {
+  if (!summary) return null;
+
+  // 1. Road Proximity Score
+  const roadDist = summary.nearestRoadDist !== undefined ? summary.nearestRoadDist : -1;
+  let roadScore = 0;
+  let roadLabel = "No Road Detected";
+  if (roadDist >= 0) {
+    const distMeters = roadDist * 1000;
+    if (distMeters <= 200) {
+      roadScore = 100;
+      roadLabel = "Excellent (<200m)";
+    } else if (distMeters <= 500) {
+      roadScore = 85;
+      roadLabel = "Good (<500m)";
+    } else if (distMeters <= 1000) {
+      roadScore = 60;
+      roadLabel = "Moderate (<1km)";
+    } else {
+      roadScore = 40;
+      roadLabel = "Poor (>1km)";
+    }
+  } else {
+    roadScore = 50;
+    roadLabel = "Unknown distance";
+  }
+
+  // 2. Healthcare Access Score
+  const hospCount = summary.hospitalsCount || 0;
+  let healthScore = 0;
+  let healthLabel = "No Clinics/Hospitals";
+  if (hospCount >= 2) {
+    healthScore = 100;
+    healthLabel = "Excellent (2+ Hospitals)";
+  } else if (hospCount === 1) {
+    healthScore = 85;
+    healthLabel = "Good (1 Hospital)";
+  } else {
+    healthScore = 30;
+    healthLabel = "Sub-optimal (0 in radius)";
+  }
+
+  // 3. Educational Access Score
+  const schoolCount = summary.schoolsCount || 0;
+  let eduScore = 0;
+  let eduLabel = "No Schools";
+  if (schoolCount >= 2) {
+    eduScore = 100;
+    eduLabel = "Excellent (2+ Schools)";
+  } else if (schoolCount === 1) {
+    eduScore = 85;
+    eduLabel = "Good (1 School)";
+  } else {
+    eduScore = 30;
+    eduLabel = "Sub-optimal (0 in radius)";
+  }
+
+  // 4. Flood Risk Safety Score (Inverted: low risk = high score)
+  const floodRisk = summary.floodRisk || "Low";
+  let safetyScore = 100;
+  let safetyLabel = "Low Risk (Safe)";
+  if (floodRisk === "High") {
+    safetyScore = 20;
+    safetyLabel = "High Risk (Critical Proximity)";
+  } else if (floodRisk === "Medium") {
+    safetyScore = 60;
+    safetyLabel = "Medium Risk (Caution)";
+  }
+
+  // Calculate overall weighted score
+  const overallScore = Math.round(
+    (roadScore * 0.3) +
+    (healthScore * 0.25) +
+    (eduScore * 0.25) +
+    (safetyScore * 0.2)
+  );
+
+  return {
+    overallScore,
+    roadScore,
+    roadLabel,
+    healthScore,
+    healthLabel,
+    eduScore,
+    eduLabel,
+    safetyScore,
+    safetyLabel
+  };
+};
 
 const isRetina = typeof window !== 'undefined' && window.devicePixelRatio > 1;
 const tilePixelRatio = isRetina ? 2 : 1;
@@ -445,6 +581,9 @@ function App() {
   const dataLayerRefs = useRef({});
   const selectedPointSourceRef = useRef(new VectorSource());
   const highlightSourceRef = useRef(new VectorSource());
+  const decisionSupportPinsSourceRef = useRef(new VectorSource());
+  const decisionSupportPinsLayerRef = useRef(null);
+  const clickedRelationshipTargetSourceRef = useRef(new VectorSource());
   const distanceMeasureSourceRef = useRef(new VectorSource());
   const distanceMeasureLayerRef = useRef(null);
   const drawInteractionRef = useRef(null);
@@ -531,7 +670,12 @@ function App() {
   });
   const layersRef = useRef([]);
   const markerModeRef = useRef(markerModeEnabled);
+  const drawModeRef = useRef(drawMode);
+  const decisionSupportModeRef = useRef(false);
   const activeLayerIdRef = useRef(activeLayerId);
+  const fetchKnowledgeContextRef = useRef(null);
+  const queryPointElevationRef = useRef(null);
+  const openFeatureDialogRef = useRef(null);
   const [hoveredMarkerInfo, setHoveredMarkerInfo] = useState(null);
   const hoverTooltipRef = useRef(null);
 
@@ -564,8 +708,159 @@ function App() {
   const [highlightedLiveAmenity, setHighlightedLiveAmenity] = useState(null);
   const [amenitySearchQuery, setAmenitySearchQuery] = useState('');
 
-  const [activeSidebarTab, setActiveSidebarTab] = useState('layers'); // 'layers', 'analysis'
+  const [activeSidebarTab, setActiveSidebarTab] = useState('layers'); // 'layers', 'analysis', 'decision'
   const [activeAnalysisSubTab, setActiveAnalysisSubTab] = useState('lulc'); // 'lulc', 'insights'
+  const [knowledgeContext, setKnowledgeContext] = useState(null);
+  const [knowledgeLoading, setKnowledgeLoading] = useState(false);
+  const [knowledgeError, setKnowledgeError] = useState(null);
+  const [knowledgeRadius, setKnowledgeRadius] = useState(2000); // default 2km (in meters)
+  const [showBuffer, setShowBuffer] = useState(true);
+
+  const [selectedStatsCategory, setSelectedStatsCategory] = useState(null);
+  const [activeRelGroup, setActiveRelGroup] = useState('all');
+  const [decisionSupportModeEnabled, setDecisionSupportModeEnabled] = useState(false);
+  const [activeRelationshipTarget, setActiveRelationshipTarget] = useState(null);
+  const [selectedFactSheetNode, setSelectedFactSheetNode] = useState(null);
+  const [factSheetExpanded, setFactSheetExpanded] = useState(true);
+  const [expandedRelGroups, setExpandedRelGroups] = useState({
+    healthEducation: true,
+    environmentWater: true,
+    transportation: true,
+    settlementsIndustry: true,
+    other: false
+  });
+
+  // Synchronize selection point marker and query buffer circle on the map
+  useEffect(() => {
+    if (!selectedPointSourceRef.current) return;
+    selectedPointSourceRef.current.clear();
+
+    if (selectedCoordinates) {
+      const coords = fromLonLat(selectedCoordinates);
+
+      // 1. Add center marker
+      selectedPointSourceRef.current.addFeature(
+        new Feature({
+          geometry: new Point(coords),
+          kind: 'center-marker'
+        })
+      );
+
+      // 2. Add query radius buffer circle overlay
+      if (showBuffer && activeSidebarTab === 'decision') {
+        selectedPointSourceRef.current.addFeature(
+          new Feature({
+            geometry: new Circle(coords, knowledgeRadius),
+            isBuffer: true
+          })
+        );
+      }
+    }
+  }, [selectedCoordinates, knowledgeRadius, showBuffer, activeSidebarTab]);
+
+  // Synchronize dynamic Decision Support pins on the map
+  useEffect(() => {
+    if (!decisionSupportPinsSourceRef.current) return;
+    decisionSupportPinsSourceRef.current.clear();
+
+    if (!selectedStatsCategory || !knowledgeContext || !knowledgeContext.entities) {
+      return;
+    }
+
+    const matchesCategory = (entity, category) => {
+      const type = entity.type?.toLowerCase() || '';
+      const className = entity.properties?.className?.toLowerCase() || '';
+      const label = entity.label?.toLowerCase() || '';
+      const catLower = category.toLowerCase();
+
+      if (catLower === 'school') {
+        return type === 'school' || className === 'school' || label.includes('school') || label.includes('college') || label.includes('university');
+      }
+      if (catLower === 'hospital') {
+        return type === 'hospital' || className === 'hospital' || label.includes('hospital') || label.includes('clinic') || label.includes('medical');
+      }
+      if (catLower === 'gym') {
+        return className === 'gym' || label.includes('gym') || label.includes('fitness');
+      }
+      if (catLower === 'waterbody' || catLower === 'water') {
+        return type === 'waterbody' || className === 'water' || className === 'reservoir' || className === 'river' || type === 'river' || label.includes('river') || label.includes('lake') || label.includes('pond');
+      }
+      if (catLower === 'road') {
+        return type === 'road' || className === 'road' || label.includes('road') || label.includes('highway') || label.includes('street');
+      }
+      if (catLower === 'forest') {
+        return type === 'forest' || className === 'forest' || label.includes('forest') || label.includes('garden') || label.includes('wood');
+      }
+      if (catLower === 'village') {
+        return type === 'village' || className === 'village' || label.includes('village');
+      }
+      if (catLower === 'industry') {
+        return className === 'industry' || label.includes('industry') || label.includes('industrial');
+      }
+      return type === catLower || className === catLower;
+    };
+
+    const matchingEntities = knowledgeContext.entities.filter(entity => matchesCategory(entity, selectedStatsCategory));
+
+    matchingEntities.forEach(entity => {
+      const coords = entity.properties?.coordinates;
+      if (coords && coords.length === 2) {
+        const feature = new Feature({
+          geometry: new Point(fromLonLat([coords[0], coords[1]])),
+          name: entity.label,
+          id: entity.id
+        });
+        decisionSupportPinsSourceRef.current.addFeature(feature);
+      }
+    });
+
+    // Auto-fit the map view to the extent of the pinned features
+    if (matchingEntities.length > 0 && mapRef.current) {
+      const extent = decisionSupportPinsSourceRef.current.getExtent();
+      if (extent && extent.length === 4 && !isNaN(extent[0])) {
+        const width = extent[2] - extent[0];
+        const height = extent[3] - extent[1];
+        if (width === 0 && height === 0) {
+          mapRef.current.getView().animate({
+            center: [extent[0], extent[1]],
+            zoom: 16,
+            duration: 800
+          });
+        } else {
+          mapRef.current.getView().fit(extent, {
+            padding: [80, 80, 80, 80],
+            maxZoom: 16,
+            duration: 800
+          });
+        }
+      }
+    }
+  }, [selectedStatsCategory, knowledgeContext]);
+
+  // Synchronize clicked relationship target on the map
+  useEffect(() => {
+    if (!clickedRelationshipTargetSourceRef.current) return;
+    clickedRelationshipTargetSourceRef.current.clear();
+
+    if (activeRelationshipTarget && activeRelationshipTarget.properties?.coordinates) {
+      const [lon, lat] = activeRelationshipTarget.properties.coordinates;
+      const feature = new Feature({
+        geometry: new Point(fromLonLat([lon, lat])),
+        name: activeRelationshipTarget.label,
+        id: activeRelationshipTarget.id
+      });
+      clickedRelationshipTargetSourceRef.current.addFeature(feature);
+    }
+  }, [activeRelationshipTarget]);
+
+  // Set default fact sheet node when knowledgeContext loads
+  useEffect(() => {
+    if (knowledgeContext && knowledgeContext.entities && knowledgeContext.entities.length > 0) {
+      setSelectedFactSheetNode(knowledgeContext.entities[0]);
+    } else {
+      setSelectedFactSheetNode(null);
+    }
+  }, [knowledgeContext]);
 
   const lulcSourceRef = useRef(new VectorSource());
   const lulcLayerRef = useRef(
@@ -814,6 +1109,176 @@ out center;`;
     }
   }, []);
 
+  const fetchKnowledgeContext = useCallback(async (lonLat, customRadius) => {
+    setActiveSidebarTab('decision');
+    setActiveRelationshipTarget(null);
+    const [lon, lat] = lonLat;
+    const radiusToUse = customRadius !== undefined ? customRadius : knowledgeRadius;
+    setKnowledgeLoading(true);
+    setKnowledgeError(null);
+    try {
+      const response = await fetch(`/api/knowledge/context?lat=${lat}&lon=${lon}&radius=${radiusToUse}`);
+      if (!response.ok) {
+        throw new Error(`Failed to load knowledge context: ${response.status}`);
+      }
+      const data = await response.json();
+      setKnowledgeContext(data);
+    } catch (err) {
+      console.error('Error loading knowledge context:', err);
+      setKnowledgeError(err.message || 'Failed to connect to GIS Knowledge service.');
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  }, [knowledgeRadius]);
+
+  const highlightRelationshipTarget = useCallback((targetNode, hoverState) => {
+    if (!highlightSourceRef.current) return;
+    highlightSourceRef.current.clear();
+
+    if (hoverState && targetNode && targetNode.properties?.coordinates && selectedCoordinates) {
+      const [targetLon, targetLat] = targetNode.properties.coordinates;
+      const targetCoords = fromLonLat([targetLon, targetLat]);
+      const centerCoords = fromLonLat(selectedCoordinates);
+
+      // Create dashed connection line
+      const lineGeom = new LineString([centerCoords, targetCoords]);
+      const lineFeature = new Feature({ geometry: lineGeom });
+      lineFeature.setStyle(
+        new Style({
+          stroke: new Stroke({
+            color: '#06b6d4',
+            width: 2.5,
+            lineDash: [4, 4]
+          })
+        })
+      );
+
+      // Create target point marker
+      const pointFeature = new Feature({ geometry: new Point(targetCoords) });
+      pointFeature.setStyle([
+        new Style({
+          image: new CircleStyle({
+            radius: 12,
+            fill: new Fill({ color: 'rgba(6, 182, 212, 0.25)' })
+          })
+        }),
+        new Style({
+          image: new CircleStyle({
+            radius: 6,
+            fill: new Fill({ color: '#06b6d4' }),
+            stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+          })
+        })
+      ]);
+
+      highlightSourceRef.current.addFeature(lineFeature);
+      highlightSourceRef.current.addFeature(pointFeature);
+    }
+  }, [selectedCoordinates]);
+
+  const flyToFeature = useCallback((targetNode) => {
+    if (targetNode && targetNode.properties?.coordinates && mapRef.current) {
+      const [lon, lat] = targetNode.properties.coordinates;
+      const coords = fromLonLat([lon, lat]);
+      mapRef.current.getView().animate({
+        center: coords,
+        zoom: 16,
+        duration: 1000
+      });
+    }
+  }, []);
+
+  const getSuitabilityScore = useCallback((summary) => {
+    if (!summary) return { score: 0, label: 'No Data', color: 'text-slate-400', stroke: '#64748b', recommendations: [] };
+
+    let score = 50; // baseline
+    const recs = [];
+
+    // Proximity to roads
+    const roadDist = summary.nearestRoadDist;
+    if (roadDist !== undefined && roadDist >= 0) {
+      if (roadDist < 0.4) {
+        score += 20;
+        recs.push({ type: 'success', text: 'Excellent connectivity: road access within 400m.', category: 'Road' });
+      } else if (roadDist < 1.2) {
+        score += 10;
+        recs.push({ type: 'info', text: 'Fair connectivity: road access is within 1.2km.', category: 'Road' });
+      } else {
+        score -= 15;
+        recs.push({ type: 'warning', text: 'Poor connectivity: nearest road is over 1.2km away.', category: 'Road' });
+      }
+    } else {
+      score -= 15;
+      recs.push({ type: 'warning', text: 'Isolated site: no road detected in audit radius.', category: 'Road' });
+    }
+
+    // Proximity to hospitals
+    const hospitals = summary.hospitalsCount || 0;
+    if (hospitals > 0) {
+      score += 15;
+      recs.push({ type: 'success', text: `Medical safety: ${hospitals} hospitals within query radius.`, category: 'Hospital' });
+    } else {
+      score -= 10;
+      recs.push({ type: 'warning', text: 'Medical gap: no hospitals detected within range. Consider clinic development.', category: 'Hospital' });
+    }
+
+    // Proximity to schools
+    const schools = summary.schoolsCount || 0;
+    if (schools > 0) {
+      score += 15;
+      recs.push({ type: 'success', text: `Educational access: ${schools} schools within range.`, category: 'School' });
+    } else {
+      recs.push({ type: 'info', text: 'No schools in range. Residential suitability is moderate.', category: 'School' });
+    }
+
+    // Proximity to water bodies
+    const waterBodies = summary.waterBodiesCount || 0;
+    if (waterBodies > 0) {
+      score += 5;
+    }
+
+    // Flood Risk penalty
+    const risk = summary.floodRisk;
+    if (risk === 'High') {
+      score -= 30;
+      recs.push({ type: 'danger', text: 'High Flood Risk: Proximity to Ganges/Varuna floodplain. Reinforced foundation required.', category: 'WaterBody' });
+    } else if (risk === 'Medium') {
+      score -= 15;
+      recs.push({ type: 'warning', text: 'Moderate Flood Risk: Proximity to water system. Drainage audit recommended.', category: 'WaterBody' });
+    } else {
+      score += 10;
+      recs.push({ type: 'success', text: 'Low flood risk: safe elevation zone.', category: 'WaterBody' });
+    }
+
+    // Forest cover
+    const forest = summary.forestAreaSqKm || 0.0;
+    if (forest > 0.1) {
+      recs.push({ type: 'success', text: `Eco-rich: substantial green cover (${forest} sq km) nearby.`, category: 'Forest' });
+    }
+
+    // Bound score
+    score = Math.max(0, Math.min(100, score));
+
+    let label = 'Marginal';
+    let color = 'text-amber-400';
+    let stroke = '#f59e0b';
+    if (score >= 75) {
+      label = 'Highly Suitable';
+      color = 'text-emerald-400';
+      stroke = '#10b981';
+    } else if (score >= 50) {
+      label = 'Suitable';
+      color = 'text-cyan-400';
+      stroke = '#06b6d4';
+    } else if (score < 35 || risk === 'High') {
+      label = 'High Risk / Unsuitable';
+      color = 'text-rose-400';
+      stroke = '#f43f5e';
+    }
+
+    return { score, label, color, stroke, recommendations: recs };
+  }, []);
+
   const queryPointElevation = useCallback(async (lonLat) => {
     const [lon, lat] = lonLat;
     showStatus(`Querying elevation at ${lon.toFixed(4)}°, ${lat.toFixed(4)}°...`);
@@ -840,9 +1305,18 @@ out center;`;
   const handleCesiumPointSelected = useCallback((coordinates) => {
     setSelectedCoordinates(coordinates);
     if (elevationQueryModeRef.current) {
-      queryPointElevation(coordinates);
+      if (queryPointElevationRef.current) {
+        queryPointElevationRef.current(coordinates);
+      }
+      return;
     }
-  }, [queryPointElevation]);
+    if (drawModeRef.current !== 'None') {
+      return;
+    }
+    if (decisionSupportModeRef.current && fetchKnowledgeContextRef.current) {
+      fetchKnowledgeContextRef.current(coordinates);
+    }
+  }, []);
 
   // Auto-clear the elevation popup whenever the user exits elevation query mode
   useEffect(() => {
@@ -1059,12 +1533,20 @@ out center;`;
   }, [markerModeEnabled]);
 
   useEffect(() => {
+    drawModeRef.current = drawMode;
+  }, [drawMode]);
+
+  useEffect(() => {
     activeLayerIdRef.current = activeLayerId;
   }, [activeLayerId]);
 
   useEffect(() => {
     showHeatmapRef.current = showHeatmap;
   }, [showHeatmap]);
+
+  useEffect(() => {
+    decisionSupportModeRef.current = decisionSupportModeEnabled;
+  }, [decisionSupportModeEnabled]);
 
   const handleSearch = useCallback(async (e) => {
     e.preventDefault();
@@ -1137,6 +1619,12 @@ out center;`;
     }
   }, [searchQuery, showStatus]);
 
+  useEffect(() => {
+    fetchKnowledgeContextRef.current = fetchKnowledgeContext;
+    queryPointElevationRef.current = queryPointElevation;
+    openFeatureDialogRef.current = openFeatureDialog;
+  }, [fetchKnowledgeContext, queryPointElevation, openFeatureDialog]);
+
   // The map is only created ONCE (no deps on mapCenter or layers to prevent re-init).
   // Layer management is handled by a separate useEffect.
   useEffect(() => {
@@ -1167,10 +1655,91 @@ out center;`;
 
     const selectedPointLayer = new VectorLayer({
       source: selectedPointSourceRef.current,
-      style: pointMarkerStyle('#60a5fa')
+      style: (feature) => {
+        if (feature.get('isBuffer')) {
+          return new Style({
+            stroke: new Stroke({
+              color: 'rgba(34, 211, 238, 0.5)',
+              width: 1.5,
+              lineDash: [6, 6]
+            }),
+            fill: new Fill({
+              color: 'rgba(34, 211, 238, 0.05)'
+            })
+          });
+        }
+        return pointMarkerStyle('#60a5fa');
+      }
     });
     selectedPointLayer.set('kind', 'overlay');
     selectedPointLayerRef.current = selectedPointLayer;
+
+    const decisionSupportPinsLayer = new VectorLayer({
+      source: decisionSupportPinsSourceRef.current,
+      style: (feature) => {
+        const name = feature.get('name') || '';
+        return [
+          new Style({
+            image: new CircleStyle({
+              radius: 14,
+              fill: new Fill({ color: 'rgba(236, 72, 153, 0.25)' }),
+              stroke: new Stroke({ color: '#ec4899', width: 2 })
+            })
+          }),
+          new Style({
+            image: new CircleStyle({
+              radius: 6,
+              fill: new Fill({ color: '#ec4899' }),
+              stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+            }),
+            text: new Text({
+              text: name,
+              offsetY: -16,
+              font: 'bold 11px Inter, ui-sans-serif, system-ui, sans-serif',
+              fill: new Fill({ color: '#ffffff' }),
+              stroke: new Stroke({ color: '#0f172a', width: 3 }),
+              overflow: true
+            })
+          })
+        ];
+      }
+    });
+    decisionSupportPinsLayer.set('kind', 'overlay');
+    decisionSupportPinsLayerRef.current = decisionSupportPinsLayer;
+
+    const clickedRelationshipTargetLayer = new VectorLayer({
+      source: clickedRelationshipTargetSourceRef.current,
+      style: (feature) => {
+        const name = feature.get('name') || '';
+        return [
+          // Outer glowing amber ring
+          new Style({
+            image: new CircleStyle({
+              radius: 16,
+              fill: new Fill({ color: 'rgba(245, 158, 11, 0.2)' }),
+              stroke: new Stroke({ color: '#f59e0b', width: 2, lineDash: [4, 4] })
+            })
+          }),
+          // Inner core amber point
+          new Style({
+            image: new CircleStyle({
+              radius: 6,
+              fill: new Fill({ color: '#f59e0b' }),
+              stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+            }),
+            text: new Text({
+              text: name,
+              offsetY: -18,
+              font: 'bold 11px Inter, ui-sans-serif, system-ui, sans-serif',
+              fill: new Fill({ color: '#ffffff' }),
+              stroke: new Stroke({ color: '#0f172a', width: 3 }),
+              overflow: true
+            })
+          })
+        ];
+      }
+    });
+    clickedRelationshipTargetLayer.set('kind', 'overlay');
 
     const distanceMeasureLayer = new VectorLayer({
       source: distanceMeasureSourceRef.current,
@@ -1213,6 +1782,8 @@ out center;`;
           basemapLayersRef.current.varanasi_mbtiles,
           highlightLayer, selectedPointLayer, distanceMeasureLayer,
           drawLayer,
+          decisionSupportPinsLayer,
+          clickedRelationshipTargetLayer,
           lulcLayerRef.current  // LULC renders on top so colors are visible
         ],
         overlays: [tooltipOverlay, hoverTooltipOverlay],
@@ -1283,10 +1854,15 @@ out center;`;
     map.on('singleclick', (event) => {
       const coordinates = toLonLat(event.coordinate);
       setSelectedCoordinates(coordinates);
+      setSelectedStatsCategory(null);
       tooltipOverlay.setPosition(event.coordinate);
 
+      if (drawModeRef.current !== 'None') {
+        return;
+      }
+
       if (elevationQueryModeRef.current) {
-        queryPointElevation(coordinates);
+        queryPointElevationRef.current(coordinates);
         selectedPointSourceRef.current.clear();
         const geom = new Point(event.coordinate);
         selectedPointSourceRef.current.addFeature(new Feature({ geometry: geom }));
@@ -1294,8 +1870,13 @@ out center;`;
       }
 
       if (markerModeRef.current) {
-        openFeatureDialog(coordinates);
+        openFeatureDialogRef.current(coordinates);
         return;
+      }
+
+      // Fetch dynamic Knowledge Context
+      if (decisionSupportModeRef.current && fetchKnowledgeContextRef.current) {
+        fetchKnowledgeContextRef.current(coordinates);
       }
 
       // Check for LULC feature click — highlight it
@@ -1362,16 +1943,6 @@ out center;`;
 
     mapRef.current = map;
     window.map = map;
-    map.addInteraction(
-      new Modify({
-        source: drawSourceRef.current
-      })
-    );
-    map.addInteraction(
-      new Snap({
-        source: drawSourceRef.current
-      })
-    );
   // IMPORTANT: This effect must NOT depend on mapCenter or layers.
   // - mapCenter is only used to seed the initial view once at mount time (L1184).
   // - Layer changes are handled separately in the layer-sync useEffect below.
@@ -1957,6 +2528,22 @@ out center;`;
           >
             <Sparkles className="h-4 w-4" />
             <span>Analysis</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSidebarTab('decision');
+              setMarkerModeEnabled(false);
+              setDrawMode('None');
+            }}
+            className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              activeSidebarTab === 'decision'
+                ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <Activity className="h-4 w-4" />
+            <span>Decision Support</span>
           </button>
         </div>
 
@@ -2546,6 +3133,536 @@ out center;`;
             )}
           </div>
         )}
+
+        {activeSidebarTab === 'decision' && (
+          <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-4 pointer-events-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+                <Activity className="h-4 w-4 text-cyan-400" />
+                Decision Support
+              </h2>
+              {knowledgeContext && (
+                <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                  Active Area
+                </span>
+              )}
+            </div>
+
+            {knowledgeLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-xs">
+                <Loader2 className="h-8 w-8 animate-spin text-cyan-400 mb-3" />
+                <span>Analyzing spatial relationships...</span>
+              </div>
+            ) : knowledgeError ? (
+              <div className="text-xs text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-2xl p-4 text-center space-y-2">
+                <p className="font-semibold">Query Failed</p>
+                <p className="text-[11px] text-slate-400">{knowledgeError}</p>
+                <p className="text-[10px] text-slate-500 italic mt-2">Click on the map to query a valid coordinate.</p>
+              </div>
+            ) : !knowledgeContext ? (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/20 p-6 text-xs text-slate-400 italic leading-relaxed text-center space-y-3">
+                <div className="flex justify-center">
+                  <MapPin className="h-8 w-8 text-cyan-400/50 animate-bounce" />
+                </div>
+                <p className="font-semibold text-slate-300">No Location Selected</p>
+                <p className="text-[11px]">Click anywhere on the map to run location suitability audit and query semantic knowledge graph relationships.</p>
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-[62vh] overflow-y-auto pr-1 custom-scrollbar">
+                
+                {/* 1. Audit Search Radius */}
+                <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">AUDIT RANGE SETTINGS</span>
+                    <button
+                      type="button"
+                      onClick={() => setShowBuffer(prev => !prev)}
+                      className={`text-[9px] uppercase tracking-wider px-2 py-0.5 rounded border transition-all font-bold ${
+                        showBuffer 
+                          ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30'
+                          : 'bg-slate-800/40 text-slate-500 border-slate-700/30'
+                      }`}
+                    >
+                      {showBuffer ? 'BUFFER VISIBLE' : 'BUFFER HIDDEN'}
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-1 pt-1">
+                    <div className="flex justify-between text-xs font-semibold text-slate-300">
+                      <span className="text-slate-200 font-sans font-medium">Search Radius</span>
+                      <span className="text-cyan-400 font-mono font-bold">{(knowledgeRadius / 1000).toFixed(1)} km</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="500"
+                      max="5000"
+                      step="100"
+                      value={knowledgeRadius}
+                      onChange={(e) => setKnowledgeRadius(parseInt(e.target.value))}
+                      onMouseUp={() => {
+                        if (selectedCoordinates) {
+                          fetchKnowledgeContext(selectedCoordinates, knowledgeRadius);
+                        }
+                      }}
+                      className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                    />
+                    <div className="flex justify-between text-[8px] text-slate-500 font-mono">
+                      <span>500m</span>
+                      <span>2.5km</span>
+                      <span>5.0km</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Suitability Gauge Card */}
+                {(() => {
+                  const suitability = getSuitabilityScore(knowledgeContext.summary);
+                  const badgeColorClass = 
+                    suitability.score >= 75 ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' :
+                    suitability.score >= 50 ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' :
+                    'bg-rose-500/10 text-rose-300 border-rose-500/20';
+
+                  return (
+                    <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 flex items-center justify-between gap-4">
+                      <div className="space-y-2">
+                        <h3 className="text-sm font-bold text-white leading-snug">
+                          {knowledgeContext.entities[0]?.label || "Clicked Location"}
+                        </h3>
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="text-[8px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border bg-cyan-500/10 text-cyan-300 border-cyan-500/20">
+                            {knowledgeContext.entities[0]?.type.toUpperCase() || "PARCEL"}
+                          </span>
+                          <span className={`text-[8px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border ${badgeColorClass}`}>
+                            {suitability.label.toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-col items-center justify-center shrink-0">
+                        <div className="relative flex items-center justify-center h-12 w-12">
+                          <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                            <path
+                              className="text-slate-800"
+                              strokeWidth="3.5"
+                              stroke="currentColor"
+                              fill="none"
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                            />
+                            <path
+                              className="transition-all duration-1000 ease-out"
+                              strokeWidth="3.5"
+                              strokeDasharray={`${suitability.score}, 100`}
+                              strokeLinecap="round"
+                              stroke={suitability.stroke}
+                              fill="none"
+                              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                            />
+                          </svg>
+                          <span className="absolute text-xs font-black text-white font-mono">{suitability.score}%</span>
+                        </div>
+                        <span className="text-[7px] text-slate-500 uppercase tracking-wider font-bold mt-1">AUDIT SCORE</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 3. Urban Audit Insights */}
+                {(() => {
+                  const suitability = getSuitabilityScore(knowledgeContext.summary);
+                  if (suitability.recommendations.length === 0) return null;
+
+                  return (
+                    <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                      <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">URBAN AUDIT INSIGHTS</span>
+                      <div className="space-y-2 max-h-[18vh] overflow-y-auto custom-scrollbar pr-1">
+                        {suitability.recommendations.map((rec, index) => {
+                          const borderClass = 
+                            rec.type === 'success' ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-300' :
+                            rec.type === 'danger' ? 'border-rose-500/25 bg-rose-500/5 text-rose-300' :
+                            rec.type === 'warning' ? 'border-white bg-slate-950/40 text-slate-100' :
+                            'border-slate-500/25 bg-slate-500/5 text-slate-300';
+                          
+                          const isPinned = selectedStatsCategory === rec.category;
+                          
+                          return (
+                            <div
+                              key={index}
+                              className={`text-[10px] p-2.5 rounded-lg border leading-relaxed flex items-center justify-between gap-3 ${borderClass}`}
+                            >
+                              <span className="flex-1">{rec.text}</span>
+                              {rec.category && (() => {
+                                let btnClass = '';
+                                if (rec.type === 'success') {
+                                  btnClass = isPinned 
+                                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 shadow-[0_0_8px_rgba(16,185,129,0.4)]'
+                                    : 'bg-emerald-500/5 border-emerald-500/20 text-emerald-400/70 hover:bg-emerald-500/10 hover:text-emerald-300';
+                                } else if (rec.type === 'danger') {
+                                  btnClass = isPinned
+                                    ? 'bg-rose-500/20 border-rose-400 text-rose-200 shadow-[0_0_8px_rgba(244,63,94,0.4)]'
+                                    : 'bg-rose-500/5 border-rose-500/20 text-rose-400/70 hover:bg-rose-500/10 hover:text-rose-300';
+                                } else if (rec.type === 'warning') {
+                                  btnClass = isPinned
+                                    ? 'bg-amber-500/20 border-amber-400 text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.4)]'
+                                    : 'bg-amber-500/5 border-amber-500/20 text-amber-400/70 hover:bg-amber-500/10 hover:text-amber-300';
+                                } else {
+                                  btnClass = isPinned
+                                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 shadow-[0_0_8px_rgba(6,182,212,0.4)]'
+                                    : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white';
+                                }
+                                
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedStatsCategory(isPinned ? null : rec.category)}
+                                    className={`p-1.5 rounded-md border transition-all duration-200 shrink-0 pointer-events-auto ${btnClass}`}
+                                    title={isPinned ? `Unpin ${rec.category}s` : `Pin ${rec.category}s on Map`}
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                                    </svg>
+                                  </button>
+                                );
+                              })()}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 4. Administrative Hierarchy */}
+                <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-2">
+                  <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">ADMINISTRATIVE HIERARCHY</span>
+                  <div className="space-y-1.5 text-xs text-slate-300 font-medium">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                      <span>{knowledgeContext.entities[0]?.label || "Clicked Location"}</span>
+                    </div>
+                    <div className="flex items-center gap-2 pl-4 text-slate-400">
+                      <span className="text-[10px] text-cyan-500/60">↳</span>
+                      <span>Varanasi District</span>
+                    </div>
+                    <div className="flex items-center gap-2 pl-8 text-slate-500">
+                      <span className="text-[10px] text-cyan-500/40">↳</span>
+                      <span>Uttar Pradesh (State)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Summary Statistics */}
+                <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                  <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">
+                    SUMMARY STATISTICS ({(knowledgeRadius / 1000).toFixed(1)} KM RADIUS)
+                  </span>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatsCategory(selectedStatsCategory === 'School' ? null : 'School')}
+                      className={`bg-slate-950/40 border p-3 text-center transition-all ${
+                        selectedStatsCategory === 'School'
+                          ? 'border-cyan-400/40 bg-cyan-500/10'
+                          : 'border-white/5 hover:border-white/10 hover:bg-slate-950/60'
+                      }`}
+                    >
+                      <span className="text-xl font-bold text-cyan-400 block font-mono">{knowledgeContext.summary?.schoolsCount || 0}</span>
+                      <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold mt-1 block">Schools</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatsCategory(selectedStatsCategory === 'Hospital' ? null : 'Hospital')}
+                      className={`bg-slate-950/40 border p-3 text-center transition-all ${
+                        selectedStatsCategory === 'Hospital'
+                          ? 'border-cyan-400/40 bg-cyan-500/10'
+                          : 'border-white/5 hover:border-white/10 hover:bg-slate-950/60'
+                      }`}
+                    >
+                      <span className="text-xl font-bold text-cyan-400 block font-mono">{knowledgeContext.summary?.hospitalsCount || 0}</span>
+                      <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold mt-1 block">Hospitals</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatsCategory(selectedStatsCategory === 'Gym' ? null : 'Gym')}
+                      className={`bg-slate-950/40 border p-3 text-center transition-all ${
+                        selectedStatsCategory === 'Gym'
+                          ? 'border-cyan-400/40 bg-cyan-500/10'
+                          : 'border-white/5 hover:border-white/10 hover:bg-slate-950/60'
+                      }`}
+                    >
+                      <span className="text-xl font-bold text-cyan-400 block font-mono">{knowledgeContext.summary?.gymsCount || 0}</span>
+                      <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold mt-1 block">Gyms</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStatsCategory(selectedStatsCategory === 'WaterBody' ? null : 'WaterBody')}
+                      className={`bg-slate-950/40 border p-3 text-center transition-all ${
+                        selectedStatsCategory === 'WaterBody'
+                          ? 'border-cyan-400/40 bg-cyan-500/10'
+                          : 'border-white/5 hover:border-white/10 hover:bg-slate-950/60'
+                      }`}
+                    >
+                      <span className="text-xl font-bold text-cyan-400 block font-mono">{knowledgeContext.summary?.waterBodiesCount || 0}</span>
+                      <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold mt-1 block">Water Bodies</span>
+                    </button>
+                  </div>
+                  
+                  {/* Forest Cover Area */}
+                  <div className="flex items-center justify-between p-2.5 rounded-xl border border-white/5 bg-slate-950/40 text-[11px] font-sans">
+                    <span className="text-slate-400 font-semibold">Forest Cover Area</span>
+                    <span className="font-bold text-slate-200 font-mono">
+                      {knowledgeContext.summary?.forestAreaSqKm !== undefined ? knowledgeContext.summary.forestAreaSqKm.toFixed(2) : '0.00'} sq km
+                    </span>
+                  </div>
+                </div>
+
+                {/* 6. Nearest Infrastructure */}
+                <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                  <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">NEAREST INFRASTRUCTURE</span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs p-2.5 rounded-xl border border-white/5 bg-slate-950/40">
+                      <span className="text-slate-400 font-semibold">Nearest Road</span>
+                      <span className="font-bold text-slate-200 truncate max-w-[160px]" title={knowledgeContext.summary?.nearestRoad}>
+                        {knowledgeContext.summary?.nearestRoad || 'None in radius'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs p-2.5 rounded-xl border border-white/5 bg-slate-950/40">
+                      <span className="text-slate-400 font-semibold">Nearest River</span>
+                      <span className="font-bold text-slate-200 truncate max-w-[160px]" title={knowledgeContext.summary?.nearestRiver}>
+                        {knowledgeContext.summary?.nearestRiver || 'None in radius'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs p-2.5 rounded-xl border border-white/5 bg-slate-950/40">
+                      <span className="text-slate-400 font-semibold">Nearest School</span>
+                      <span className="font-bold text-slate-200 truncate max-w-[160px]" title={knowledgeContext.summary?.nearestSchool}>
+                        {knowledgeContext.summary?.nearestSchool || 'None in radius'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs p-2.5 rounded-xl border border-white/5 bg-slate-950/40">
+                      <span className="text-slate-400 font-semibold">Nearest Hospital</span>
+                      <span className="font-bold text-slate-200 truncate max-w-[160px]" title={knowledgeContext.summary?.nearestHospital}>
+                        {knowledgeContext.summary?.nearestHospital || 'None in radius'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 7. Discovered KG Relationships */}
+                {(() => {
+                  const rels = knowledgeContext.relationships || [];
+                  const entities = knowledgeContext.entities || [];
+                  const groups = groupRelationships(rels, entities);
+
+                  // Count elements in each group
+                  const counts = {
+                    all: rels.length,
+                    healthEducation: groups.healthEducation.relations.length,
+                    environmentWater: groups.environmentWater.relations.length,
+                    transportation: groups.transportation.relations.length,
+                    settlementsIndustry: groups.settlementsIndustry.relations.length,
+                    other: groups.other.relations.length
+                  };
+
+                  // Determine relationships to display based on active tab
+                  let filteredRels = rels;
+                  if (activeRelGroup !== 'all') {
+                    filteredRels = groups[activeRelGroup]?.relations || [];
+                  }
+
+                  return (
+                    <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">
+                          SEMANTIC RELATIONSHIP EXPLORER
+                        </span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950/60 border border-white/5 text-slate-400 font-mono font-bold">
+                          {rels.length} Total
+                        </span>
+                      </div>
+
+                      {/* Filter pills */}
+                      {rels.length > 0 && (
+                        <div className="flex gap-1 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent pointer-events-auto">
+                          {[
+                            { id: 'all', label: 'All', icon: '🌐' },
+                            { id: 'healthEducation', label: 'Health & Ed', icon: '🏥' },
+                            { id: 'environmentWater', label: 'Eco & Water', icon: '🌲' },
+                            { id: 'transportation', label: 'Transit', icon: '🛤️' },
+                            { id: 'settlementsIndustry', label: 'Settlements', icon: '🏘️' },
+                            { id: 'other', label: 'Other', icon: '📍' }
+                          ].map(tab => {
+                            const count = counts[tab.id];
+                            const isActive = activeRelGroup === tab.id;
+                            if (count === 0 && !isActive) return null; // hide empty categories unless active
+
+                            return (
+                              <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setActiveRelGroup(tab.id)}
+                                className={`text-[9px] font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1.5 transition-all duration-200 shrink-0 pointer-events-auto ${
+                                  isActive
+                                    ? 'bg-cyan-500/10 border-cyan-400 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.25)]'
+                                    : 'bg-slate-950/40 border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
+                                }`}
+                              >
+                                <span>{tab.icon}</span>
+                                <span>{tab.label}</span>
+                                <span className="font-mono text-[8px] opacity-60">({count})</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Relationships list */}
+                      {rels.length > 0 ? (
+                        filteredRels.length > 0 ? (
+                          <div className="space-y-2 max-h-[25vh] overflow-y-auto custom-scrollbar pr-1">
+                            {filteredRels.map((rel, idx) => {
+                              const targetNode = entities.find(e => e.id === rel.target);
+                              if (!targetNode) return null;
+                              
+                              // Custom styling based on target node type
+                              let typeColor = 'text-cyan-400 bg-cyan-400/10 border-cyan-500/25';
+                              let typeIcon = (
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                              );
+
+                              const tType = targetNode.type?.toLowerCase() || '';
+                              const labelLower = targetNode.label?.toLowerCase() || '';
+
+                              if (tType === 'school' || labelLower.includes('school') || labelLower.includes('college') || labelLower.includes('university')) {
+                                typeColor = 'text-indigo-400 bg-indigo-400/10 border-indigo-500/25 hover:border-indigo-400/40';
+                                typeIcon = (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                  </svg>
+                                );
+                              } else if (tType === 'hospital' || labelLower.includes('hospital') || labelLower.includes('clinic') || labelLower.includes('medical')) {
+                                typeColor = 'text-rose-400 bg-rose-400/10 border-rose-500/25 hover:border-rose-400/40';
+                                typeIcon = (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                                  </svg>
+                                );
+                              } else if (tType === 'gym' || labelLower.includes('gym') || labelLower.includes('fitness')) {
+                                typeColor = 'text-amber-400 bg-amber-400/10 border-amber-500/25 hover:border-amber-400/40';
+                                typeIcon = (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h1.5A2.5 2.5 0 0020 9.5V8a2 2 0 00-2-2h-3.5A2.5 2.5 0 0112 3.5V2" />
+                                  </svg>
+                                );
+                              } else if (tType === 'river' || tType === 'waterbody' || labelLower.includes('river') || labelLower.includes('lake') || labelLower.includes('pond')) {
+                                typeColor = 'text-blue-400 bg-blue-400/10 border-blue-500/25 hover:border-blue-400/40';
+                                typeIcon = (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                                  </svg>
+                                );
+                              } else if (tType === 'road' || labelLower.includes('road') || labelLower.includes('highway') || labelLower.includes('street')) {
+                                typeColor = 'text-emerald-400 bg-emerald-400/10 border-emerald-500/25 hover:border-emerald-400/40';
+                                typeIcon = (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                                  </svg>
+                                );
+                              } else if (tType === 'forest' || labelLower.includes('forest') || labelLower.includes('garden') || labelLower.includes('wood') || labelLower.includes('park')) {
+                                typeColor = 'text-teal-400 bg-teal-400/10 border-teal-500/25 hover:border-teal-400/40';
+                                typeIcon = (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                                  </svg>
+                                );
+                              }
+
+                              const relName = RELATION_TYPE_LABELS[rel.relation] || rel.relation;
+
+                              return (
+                                <div
+                                  key={idx}
+                                  onClick={() => {
+                                    flyToFeature(targetNode);
+                                    setActiveRelationshipTarget(targetNode);
+                                  }}
+                                  className="group relative flex items-center justify-between p-3 rounded-xl border border-white/5 bg-slate-950/40 hover:bg-slate-950/70 hover:border-cyan-500/30 cursor-pointer transition-all duration-300 pointer-events-auto overflow-hidden"
+                                >
+                                  {/* Hover overlay glow */}
+                                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+
+                                  <div className="flex-1 min-w-0 pr-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[11px] font-bold text-slate-100 truncate group-hover:text-cyan-300 transition-colors">
+                                        {targetNode.label}
+                                      </span>
+                                      <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-900 border border-white/5 text-slate-400 font-mono font-bold shrink-0">
+                                        {targetNode.type || 'Entity'}
+                                      </span>
+                                    </div>
+
+                                    {/* Relationship diagram line */}
+                                    <div className="flex items-center gap-2 mt-2 text-slate-500">
+                                      <span className="text-[9px] font-semibold text-slate-400 shrink-0">Site</span>
+                                      
+                                      <div className="flex-1 relative flex items-center h-4">
+                                        <svg className="w-full h-full absolute inset-0 overflow-visible" preserveAspectRatio="none">
+                                          <line 
+                                            x1="0%" y1="50%" x2="100%" y2="50%" 
+                                            stroke="currentColor" 
+                                            strokeWidth="1" 
+                                            strokeDasharray="4,4" 
+                                            className="text-slate-700 group-hover:text-cyan-500/40 transition-colors"
+                                          />
+                                        </svg>
+                                        <span className="absolute left-1/2 -translate-x-1/2 text-[7px] uppercase font-black px-1.5 py-0.2 rounded border border-white/5 bg-slate-900 text-slate-400 group-hover:text-cyan-300 group-hover:border-cyan-500/20 shadow-sm font-sans tracking-wide transition-all z-10 whitespace-nowrap">
+                                          {relName}
+                                        </span>
+                                      </div>
+
+                                      <span className="text-[9px] font-semibold text-slate-400 shrink-0 truncate max-w-[80px]">
+                                        {targetNode.label}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className={`p-2 rounded-lg border transition-all duration-300 shrink-0 shadow-inner ${typeColor}`}>
+                                    {typeIcon}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-white/5 rounded-xl bg-slate-950/20">
+                            <svg className="w-6 h-6 text-slate-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                            </svg>
+                            <p className="text-[10px] text-slate-500 italic">No connections in this category.</p>
+                          </div>
+                        )
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-white/5 rounded-xl bg-slate-950/20">
+                          <svg className="w-6 h-6 text-slate-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4h2M12 9v4" />
+                          </svg>
+                          <p className="text-[10px] text-slate-500 italic">No semantic relationships discovered.</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+              </div>
+            )}
+          </div>
+        )}
       </aside>
 
       {/* Floating vertical toolbar on the right, below the zoom controls */}
@@ -2556,10 +3673,11 @@ out center;`;
             setMarkerModeEnabled(false);
             setElevationQueryMode(false);
             setDrawMode('None');
+            setDecisionSupportModeEnabled(false);
             showStatus('Navigation mode active. Pan, zoom, and select sites.');
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
-            !markerModeEnabled && drawMode === 'None' && !elevationQueryMode
+            !markerModeEnabled && drawMode === 'None' && !elevationQueryMode && !decisionSupportModeEnabled
               ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
@@ -2573,6 +3691,7 @@ out center;`;
           onClick={() => {
             setDrawMode('None');
             setElevationQueryMode(false);
+            setDecisionSupportModeEnabled(false);
             if (!activeLayerId && layers[0]?.id) {
               setActiveLayerId(layers[0].id);
             }
@@ -2594,6 +3713,7 @@ out center;`;
           onClick={() => {
             setMarkerModeEnabled(false);
             setElevationQueryMode(false);
+            setDecisionSupportModeEnabled(false);
             setDrawMode('Polygon');
             showStatus('Click the map to draw a polygon area.');
           }}
@@ -2612,6 +3732,7 @@ out center;`;
           onClick={() => {
             setMarkerModeEnabled(false);
             setDrawMode('None');
+            setDecisionSupportModeEnabled(false);
             setElevationQueryMode(true);
             showStatus('Elevation Query mode: click any point on the map to query DEM elevation & slope.');
           }}
@@ -2623,6 +3744,30 @@ out center;`;
           title="Elevation Query"
         >
           <LocateFixed className="h-4 w-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setMarkerModeEnabled(false);
+            setDrawMode('None');
+            setElevationQueryMode(false);
+            const nextState = !decisionSupportModeEnabled;
+            setDecisionSupportModeEnabled(nextState);
+            if (nextState) {
+              showStatus('Decision Support Active. Click anywhere on the map to audit location and query KG.');
+            } else {
+              showStatus('Decision Support Inactive. Navigation mode active.');
+            }
+          }}
+          className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
+            decisionSupportModeEnabled
+              ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+          }`}
+          title="Decision Support Mode"
+        >
+          <Brain className="h-4 w-4" />
         </button>
 
         <button
