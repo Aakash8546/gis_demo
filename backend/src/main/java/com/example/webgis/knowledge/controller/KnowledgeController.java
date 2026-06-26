@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/knowledge")
@@ -29,6 +30,23 @@ public class KnowledgeController {
             return ResponseEntity.ok(context);
         } catch (Exception e) {
             log.error("Failed to build knowledge context", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @PostMapping("/polygon-context")
+    public ResponseEntity<KnowledgeContext> getPolygonContext(
+            @RequestBody Map<String, Object> payload) {
+        log.info("Request context for polygon: {}", payload);
+        try {
+            List<List<List<Double>>> coordinates = (List<List<List<Double>>>) payload.get("coordinates");
+            if (coordinates == null || coordinates.isEmpty()) {
+                return ResponseEntity.badRequest().build();
+            }
+            KnowledgeContext context = contextService.buildPolygonKnowledgeContext(coordinates);
+            return ResponseEntity.ok(context);
+        } catch (Exception e) {
+            log.error("Failed to build polygon knowledge context", e);
             return ResponseEntity.internalServerError().build();
         }
     }

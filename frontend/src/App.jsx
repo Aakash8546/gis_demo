@@ -21,6 +21,7 @@ import GeoJSON from 'ol/format/GeoJSON';
 import { fromLonLat, toLonLat } from 'ol/proj';
 import TileWMS from 'ol/source/TileWMS';
 import CesiumMap from './components/CesiumMap';
+import KgVisualizer from './components/KgVisualizer';
 import { defaults as defaultControls, ScaleLine } from 'ol/control';
 import { Fill, Stroke, Style, Circle as CircleStyle, Text } from 'ol/style';
 import {
@@ -715,6 +716,33 @@ function App() {
   const [knowledgeError, setKnowledgeError] = useState(null);
   const [knowledgeRadius, setKnowledgeRadius] = useState(2000); // default 2km (in meters)
   const [showBuffer, setShowBuffer] = useState(true);
+  const [showKgVisualizer, setShowKgVisualizer] = useState(false);
+  const [polygonKnowledgeContext, setPolygonKnowledgeContext] = useState(null);
+  const [polygonKnowledgeLoading, setPolygonKnowledgeLoading] = useState(false);
+  const [polygonKnowledgeError, setPolygonKnowledgeError] = useState(null);
+
+  const selectedAreaPolygon = useMemo(() => {
+    return drawSourceRef.current
+      .getFeatures()
+      .filter((feature) => feature.getGeometry()?.getType() === 'Polygon')
+      .at(-1);
+  }, [drawRevision]);
+
+  const selectedAreaMetrics = useMemo(() => {
+    if (!selectedAreaPolygon) return null;
+    return getPolygonMetrics(selectedAreaPolygon);
+  }, [selectedAreaPolygon]);
+
+  const selectedAreaCoords = useMemo(() => {
+    if (!selectedAreaPolygon) return null;
+    const geom = selectedAreaPolygon.getGeometry();
+    if (!geom) return null;
+    const rings = geom.getCoordinates();
+    if (!rings || rings.length === 0) return null;
+    const coords = rings[0]; // Outer ring coordinates (EPSG:3857)
+    if (!coords) return null;
+    return coords.map((c) => toLonLat(c));
+  }, [selectedAreaPolygon]);
 
   const [selectedStatsCategory, setSelectedStatsCategory] = useState(null);
   const [activeRelGroup, setActiveRelGroup] = useState('all');
@@ -1131,6 +1159,35 @@ out center;`;
     }
   }, [knowledgeRadius]);
 
+  const fetchPolygonKnowledgeContext = useCallback(async () => {
+    if (!selectedAreaCoords) {
+      showStatus('Please draw a polygon area on the map first.');
+      return;
+    }
+    setPolygonKnowledgeLoading(true);
+    setPolygonKnowledgeError(null);
+    setPolygonKnowledgeContext(null);
+    try {
+      const response = await fetch('/api/knowledge/polygon-context', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coordinates: [selectedAreaCoords] })
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to build polygon context: ${response.status}`);
+      }
+      const data = await response.json();
+      setPolygonKnowledgeContext(data);
+      setShowKgVisualizer(true);
+    } catch (err) {
+      console.error('Error loading polygon knowledge context:', err);
+      setPolygonKnowledgeError(err.message || 'Failed to connect to GIS Knowledge service.');
+      showStatus('Failed to generate Area Knowledge Graph.');
+    } finally {
+      setPolygonKnowledgeLoading(false);
+    }
+  }, [selectedAreaCoords, showStatus]);
+
   const highlightRelationshipTarget = useCallback((targetNode, hoverState) => {
     if (!highlightSourceRef.current) return;
     highlightSourceRef.current.clear();
@@ -1370,28 +1427,6 @@ out center;`;
     }
   }, [mapMode, showStatus]);
 
-  const selectedAreaPolygon = useMemo(() => {
-    return drawSourceRef.current
-      .getFeatures()
-      .filter((feature) => feature.getGeometry()?.getType() === 'Polygon')
-      .at(-1);
-  }, [drawRevision]);
-
-  const selectedAreaMetrics = useMemo(() => {
-    if (!selectedAreaPolygon) return null;
-    return getPolygonMetrics(selectedAreaPolygon);
-  }, [selectedAreaPolygon]);
-
-  const selectedAreaCoords = useMemo(() => {
-    if (!selectedAreaPolygon) return null;
-    const geom = selectedAreaPolygon.getGeometry();
-    if (!geom) return null;
-    const rings = geom.getCoordinates();
-    if (!rings || rings.length === 0) return null;
-    const coords = rings[0]; // Outer ring coordinates (EPSG:3857)
-    if (!coords) return null;
-    return coords.map((c) => toLonLat(c));
-  }, [selectedAreaPolygon]);
 
   const cesiumMarkers = useMemo(() => {
     const list = [];
@@ -2803,6 +2838,26 @@ out center;`;
 
             {selectedAreaAnalysis ? (
               <div className="space-y-3">
+                {/* Visualize Area Knowledge Graph Button */}
+                <button
+                  onClick={fetchPolygonKnowledgeContext}
+                  disabled={polygonKnowledgeLoading}
+                  type="button"
+                  className="w-full flex items-center justify-center gap-2 rounded-[16px] py-2.5 px-3 text-xs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 transition-all shadow-lg shadow-cyan-400/10 pointer-events-auto"
+                >
+                  {polygonKnowledgeLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Generating Area Graph...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="h-4 w-4" />
+                      <span>Visualize Area Knowledge Graph</span>
+                    </>
+                  )}
+                </button>
+
                 {/* Analysis Sub-tab Switcher */}
                 <div className="flex rounded-xl bg-slate-900/80 p-1 border border-white/5 shadow-inner">
                   <button
@@ -3161,11 +3216,45 @@ out center;`;
               </div>
             ) : !knowledgeContext ? (
               <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/20 p-6 text-xs text-slate-400 italic leading-relaxed text-center space-y-3">
-                <div className="flex justify-center">
-                  <MapPin className="h-8 w-8 text-cyan-400/50 animate-bounce" />
-                </div>
-                <p className="font-semibold text-slate-300">No Location Selected</p>
-                <p className="text-[11px]">Click anywhere on the map to run location suitability audit and query semantic knowledge graph relationships.</p>
+                {selectedAreaCoords ? (
+                  <>
+                    <div className="flex justify-center">
+                      <Brain className="h-8 w-8 text-cyan-400 animate-pulse" />
+                    </div>
+                    <p className="font-semibold text-slate-300">Drawn Area Ready</p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      Inspect suitability, DEM elevations, LULC class coverage, and semantic entities in your selected boundary by exploring its Knowledge Graph.
+                    </p>
+                    <button
+                      onClick={fetchPolygonKnowledgeContext}
+                      disabled={polygonKnowledgeLoading}
+                      type="button"
+                      className="w-full flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 transition-all mt-2 pointer-events-auto"
+                    >
+                      {polygonKnowledgeLoading ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span>Generating Area Graph...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Brain className="h-3.5 w-3.5" />
+                          <span>Visualize Area KG</span>
+                        </>
+                      )}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-center">
+                      <MapPin className="h-8 w-8 text-cyan-400/50 animate-bounce" />
+                    </div>
+                    <p className="font-semibold text-slate-300">No Location Selected</p>
+                    <p className="text-[11px] text-slate-400">
+                      Click anywhere on the map to run location suitability audit, or draw a polygon area to inspect its semantic Knowledge Graph.
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="space-y-4 max-h-[62vh] overflow-y-auto pr-1 custom-scrollbar">
@@ -4093,7 +4182,15 @@ out center;`;
       )}
     </div>
 
-    {featureDialogOpen ? (
+      {showKgVisualizer && polygonKnowledgeContext && (
+        <KgVisualizer
+          context={polygonKnowledgeContext}
+          onClose={() => setShowKgVisualizer(false)}
+          mapRef={mapRef}
+        />
+      )}
+
+      {featureDialogOpen ? (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
         <div className="w-full max-w-xl rounded-[28px] border border-white/10 bg-[#0b1728] p-5 shadow-2xl shadow-black/40">
           <div className="flex items-start justify-between gap-4">
