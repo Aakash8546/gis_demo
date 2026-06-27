@@ -73,13 +73,14 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
   // Dragging node state
   const draggingNodeRef = useRef(null);
 
-  // Force Directed Simulation Parameters
+  // Force Directed Simulation Parameters and Alpha Decay
+  const alphaRef = useRef(1.0);
   const repulsionStrength = 12000;
-  const linkStrength = 0.06;
+  const linkStrength = 0.08;
   const linkLength = 110;
   const gravity = 0.025;
-  const friction = 0.82;
-  const collisionRadius = 60; // Clean distance spacing!
+  const friction = 0.70; // Higher friction / more damping to stop sliding
+  const collisionRadius = 65; // Clean distance spacing!
 
   // Re-run simulation trigger
   const [tick, setTick] = useState(0);
@@ -168,6 +169,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
     setLinks(simLinks);
     setSelectedNode(null);
     setTransform({ x: 0, y: 0, k: 1 });
+    alphaRef.current = 1.0;
   }, [context]);
 
   // Simulation physics loop
@@ -177,10 +179,23 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
     let animFrameId;
 
     const runFrame = () => {
+      // If system has cooled down, halt updates and clear active velocities
+      if (alphaRef.current < 0.005) {
+        for (let i = 0; i < activeNodes.length; i++) {
+          const node = activeNodes[i];
+          if (!node.fx) {
+            node.vx = 0;
+            node.vy = 0;
+          }
+        }
+        return;
+      }
+
       const width = containerRef.current?.clientWidth || 800;
       const height = containerRef.current?.clientHeight || 600;
       const centerX = width / 2;
       const centerY = height / 2;
+      const alpha = alphaRef.current;
 
       // 1. Repulsion force (Coulomb's Law)
       for (let i = 0; i < activeNodes.length; i++) {
@@ -194,7 +209,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
 
           // Standard repulsion
           if (dist < 400) {
-            const force = repulsionStrength / (dist * dist + 10);
+            const force = (repulsionStrength / (dist * dist + 10)) * alpha;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
 
@@ -211,8 +226,8 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
           // Anti-overlapping / Hard collision protection
           if (dist < collisionRadius) {
             const overlap = collisionRadius - dist;
-            const cx = (dx / dist) * overlap * 0.5;
-            const cy = (dy / dist) * overlap * 0.5;
+            const cx = (dx / dist) * overlap * 0.5 * Math.max(alpha, 0.2); // Keep overlapping resolution firm
+            const cy = (dy / dist) * overlap * 0.5 * Math.max(alpha, 0.2);
 
             if (!nodeA.fx) {
               nodeA.vx -= cx;
@@ -235,7 +250,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
         const dy = nodeB.y - nodeA.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
 
-        const force = (dist - linkLength) * linkStrength;
+        const force = (dist - linkLength) * linkStrength * alpha;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
 
@@ -257,8 +272,8 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
         const dx = centerX - node.x;
         const dy = centerY - node.y;
         
-        node.vx += dx * gravity;
-        node.vy += dy * gravity;
+        node.vx += dx * gravity * alpha;
+        node.vy += dy * gravity * alpha;
       }
 
       // 4. Apply velocities & friction
@@ -277,6 +292,9 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
           node.vy *= friction;
         }
       }
+
+      // Cool down
+      alphaRef.current *= 0.983;
 
       // Trigger redraw
       setTick(t => t + 1);
@@ -316,6 +334,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
       node.fy = mouseY;
       node.x = mouseX;
       node.y = mouseY;
+      alphaRef.current = 0.15; // Keep warm/active during drag
     }
   };
 
@@ -329,6 +348,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
         node.fy = null;
       }
       draggingNodeRef.current = null;
+      alphaRef.current = 1.0; // Fully reheat to settle after release
     }
   };
 
@@ -362,6 +382,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
     draggingNodeRef.current = node;
     node.fx = node.x;
     node.fy = node.y;
+    alphaRef.current = 1.0; // Reheat
   };
 
   const toggleNodePin = (node) => {
@@ -375,6 +396,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
       node.fx = node.x;
       node.fy = node.y;
     }
+    alphaRef.current = 1.0; // Reheat
   };
 
   // Toggle categories visibility
@@ -383,6 +405,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
       ...prev,
       [category]: !prev[category]
     }));
+    alphaRef.current = 1.0; // Reheat to reorganize
   };
 
   const handleCenterMap = (node) => {
