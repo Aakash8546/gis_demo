@@ -44,6 +44,8 @@ public class KnowledgeController {
                 return ResponseEntity.badRequest().build();
             }
             KnowledgeContext context = contextService.buildPolygonKnowledgeContext(coordinates);
+            log.info("Successfully built polygon knowledge context with {} entities and {} relationships", 
+                     context.getEntities().size(), context.getRelationships().size());
             return ResponseEntity.ok(context);
         } catch (Exception e) {
             log.error("Failed to build polygon knowledge context", e);

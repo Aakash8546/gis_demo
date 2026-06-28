@@ -64,6 +64,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
   
   // Filtering
   const [disabledCategories, setDisabledCategories] = useState({});
+  const [showNearRelations, setShowNearRelations] = useState(false);
 
   // SVG Pan/Zoom state
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
@@ -72,15 +73,72 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
 
   // Dragging node state
   const draggingNodeRef = useRef(null);
+  const hoverTimeoutRef = useRef(null);
+
+  // Cleanup hover timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Force Directed Simulation Parameters and Alpha Decay
   const alphaRef = useRef(1.0);
-  const repulsionStrength = 12000;
-  const linkStrength = 0.08;
-  const linkLength = 110;
   const gravity = 0.025;
-  const friction = 0.70; // Higher friction / more damping to stop sliding
-  const collisionRadius = 65; // Clean distance spacing!
+
+  // Filtered lists (defined early to support parameters calculation)
+  const activeNodes = useMemo(() => {
+    if (!nodes) return [];
+    return nodes.filter(n => !disabledCategories[n.type]);
+  }, [nodes, disabledCategories]);
+
+  const activeNodeIds = useMemo(() => new Set(activeNodes.map(n => n.id)), [activeNodes]);
+
+  const activeLinks = useMemo(() => {
+    if (!links) return [];
+    return links.filter(l => {
+      const isNear = l.relation === 'NEAR' || (l.relation && l.relation.toUpperCase() === 'NEAR');
+      if (isNear && !showNearRelations) return false;
+      return activeNodeIds.has(l.source.id) && activeNodeIds.has(l.target.id);
+    });
+  }, [links, activeNodeIds, showNearRelations]);
+
+  // Dynamic scale-adaptive force parameters based on graph size/density
+  const { repulsionStrength, linkStrength, linkLength, friction, collisionRadius } = useMemo(() => {
+    const edgeCount = activeLinks.length;
+    
+    // Default base parameters for sparse graphs
+    let repulsion = 12000;
+    let strength = 0.08;
+    let length = 110;
+    let damp = 0.70; // friction
+    let collision = 65;
+    
+    // Scale for large / dense graphs
+    if (edgeCount > 400) {
+      repulsion = 7000;       // Weaker repulsion to avoid massive explosive forces
+      strength = 0.12;        // Stronger springs to pull clusters together
+      length = 85;           // Shorter spring rest lengths to keep graph compact
+      damp = 0.52;            // Lower friction value (means higher damping/viscous drag!) to absorb kinetic energy faster
+      collision = 55;         // Smaller collision radius
+    } else if (edgeCount > 100) {
+      repulsion = 9500;
+      strength = 0.10;
+      length = 100;
+      damp = 0.62;
+      collision = 60;
+    }
+    
+    return {
+      repulsionStrength: repulsion,
+      linkStrength: strength,
+      linkLength: length,
+      friction: damp,
+      collisionRadius: collision
+    };
+  }, [activeLinks.length]);
 
   // Re-run simulation trigger
   const [tick, setTick] = useState(0);
@@ -92,16 +150,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
     return [...new Set(types)].filter(Boolean);
   }, [context]);
 
-  // Filtered lists
-  const activeNodes = useMemo(() => {
-    return nodes.filter(n => !disabledCategories[n.type]);
-  }, [nodes, disabledCategories]);
 
-  const activeNodeIds = useMemo(() => new Set(activeNodes.map(n => n.id)), [activeNodes]);
-
-  const activeLinks = useMemo(() => {
-    return links.filter(l => activeNodeIds.has(l.source.id) && activeNodeIds.has(l.target.id));
-  }, [links, activeNodeIds]);
 
   // Neighbors map for fast lookup during hovers
   const nodeConnections = useMemo(() => {
@@ -126,17 +175,33 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
     const centerX = width / 2;
     const centerY = height / 2;
 
-    // Build unique nodes list
-    const simNodes = context.entities.map((node, i) => {
-      // Focus node starts strictly at the center
+    // Build unique nodes list with Concentric & Category Sector Initialization for rapid convergence (<1s)
+    const nonFocusNodes = context.entities.filter(n => n.id !== 'node-focus-polygon');
+    // Sort nodes by type to group same categories together along angular wedges
+    nonFocusNodes.sort((a, b) => (a.type || '').localeCompare(b.type || ''));
+
+    const nodeCoords = {};
+    const total = nonFocusNodes.length;
+    nonFocusNodes.forEach((node, i) => {
+      const angle = (i * 2 * Math.PI) / (total || 1);
+      const isOuter = node.type === 'District' || node.type === 'State' || node.type === 'UrbanArea';
+      const radius = isOuter ? 260 : 140;
+      nodeCoords[node.id] = {
+        x: centerX + radius * Math.cos(angle),
+        y: centerY + radius * Math.sin(angle)
+      };
+    });
+
+    const simNodes = context.entities.map(node => {
       const isFocus = node.id === 'node-focus-polygon';
-      const angle = (i * 2 * Math.PI) / context.entities.length;
-      const radius = isFocus ? 0 : 150 + Math.random() * 50;
+      const pos = isFocus 
+        ? { x: centerX, y: centerY } 
+        : nodeCoords[node.id] || { x: centerX + 150, y: centerY };
 
       return {
         ...node,
-        x: isFocus ? centerX : centerX + radius * Math.cos(angle),
-        y: isFocus ? centerY : centerY + radius * Math.sin(angle),
+        x: pos.x,
+        y: pos.y,
         vx: 0,
         vy: 0,
         fx: isFocus ? centerX : null, // Pin the focus node in the center
@@ -179,7 +244,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
     let animFrameId;
 
     const runFrame = () => {
-      // If system has cooled down, halt updates and clear active velocities
+      // If system has cooled down, keep loop spinning but skip calculations
       if (alphaRef.current < 0.005) {
         for (let i = 0; i < activeNodes.length; i++) {
           const node = activeNodes[i];
@@ -188,6 +253,7 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
             node.vy = 0;
           }
         }
+        animFrameId = requestAnimationFrame(runFrame);
         return;
       }
 
@@ -204,14 +270,21 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
           const nodeB = activeNodes[j];
           let dx = nodeB.x - nodeA.x;
           let dy = nodeB.y - nodeA.y;
-          if (dx === 0) dx = 0.1; // Avoid divide by zero
-          const dist = Math.sqrt(dx * dx + dy * dy);
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          
+          if (dist < 15) {
+            // Assign a small random separation to resolve overlaps safely without division explosion!
+            dx = (Math.random() - 0.5) * 6 + 1;
+            dy = (Math.random() - 0.5) * 6 + 1;
+            dist = Math.sqrt(dx * dx + dy * dy);
+          }
 
           // Standard repulsion
           if (dist < 400) {
-            const force = (repulsionStrength / (dist * dist + 10)) * alpha;
-            const fx = (dx / dist) * force;
-            const fy = (dy / dist) * force;
+            const force = (repulsionStrength / (dist * dist + 100)) * alpha;
+            const cappedForce = Math.min(10, force); // Cap maximum force per frame to prevent explosions
+            const fx = (dx / dist) * cappedForce;
+            const fy = (dy / dist) * cappedForce;
 
             if (!nodeA.fx) {
               nodeA.vx -= fx;
@@ -229,13 +302,16 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
             const cx = (dx / dist) * overlap * 0.5 * Math.max(alpha, 0.2); // Keep overlapping resolution firm
             const cy = (dy / dist) * overlap * 0.5 * Math.max(alpha, 0.2);
 
+            const cappedCx = Math.max(-8, Math.min(8, cx));
+            const cappedCy = Math.max(-8, Math.min(8, cy));
+
             if (!nodeA.fx) {
-              nodeA.vx -= cx;
-              nodeA.vy -= cy;
+              nodeA.vx -= cappedCx;
+              nodeA.vy -= cappedCy;
             }
             if (!nodeB.fx) {
-              nodeB.vx += cx;
-              nodeB.vy += cy;
+              nodeB.vx += cappedCx;
+              nodeB.vy += cappedCy;
             }
           }
         }
@@ -246,13 +322,20 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
         const link = activeLinks[i];
         const nodeA = link.source;
         const nodeB = link.target;
-        const dx = nodeB.x - nodeA.x;
-        const dy = nodeB.y - nodeA.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 0.1;
+        let dx = nodeB.x - nodeA.x;
+        let dy = nodeB.y - nodeA.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist < 15) {
+          dx = (Math.random() - 0.5) * 6 + 1;
+          dy = (Math.random() - 0.5) * 6 + 1;
+          dist = Math.sqrt(dx * dx + dy * dy);
+        }
 
         const force = (dist - linkLength) * linkStrength * alpha;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
+        const cappedForce = Math.max(-10, Math.min(10, force)); // Cap link attraction force
+        const fx = (dx / dist) * cappedForce;
+        const fy = (dy / dist) * cappedForce;
 
         if (!nodeA.fx) {
           nodeA.vx += fx;
@@ -276,7 +359,10 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
         node.vy += dy * gravity * alpha;
       }
 
-      // 4. Apply velocities & friction
+      // 4. Apply velocities & friction, and measure node displacement
+      let maxMovement = 0;
+      let totalMovement = 0;
+
       for (let i = 0; i < activeNodes.length; i++) {
         const node = activeNodes[i];
         
@@ -288,16 +374,91 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
         } else {
           node.x += node.vx;
           node.y += node.vy;
+          
+          const dx = node.vx;
+          const dy = node.vy;
+          const movement = Math.sqrt(dx * dx + dy * dy);
+          if (movement > maxMovement) {
+            maxMovement = movement;
+          }
+          totalMovement += movement;
+
           node.vx *= friction;
           node.vy *= friction;
         }
       }
 
-      // Cool down
-      alphaRef.current *= 0.983;
+      // Early stabilization cutoff: if maximum node movement is negligible, halt simulation immediately!
+      const avgMovement = totalMovement / (activeNodes.length || 1);
+      if (maxMovement < 0.15 && avgMovement < 0.08) {
+        alphaRef.current = 0;
+        for (let i = 0; i < activeNodes.length; i++) {
+          const node = activeNodes[i];
+          if (!node.fx) {
+            node.vx = 0;
+            node.vy = 0;
+          }
+        }
+        animFrameId = requestAnimationFrame(runFrame);
+        return;
+      }
 
-      // Trigger redraw
-      setTick(t => t + 1);
+      // Adaptive cooling down
+      if (alphaRef.current > 0.4) {
+        alphaRef.current *= 0.93; // Cool rapidly for initial layout coarse adjustments
+      } else {
+        alphaRef.current *= 0.975; // Cool slowly to allow nodes to settle into equilibrium
+      }
+
+      // 5. Update DOM elements directly to bypass React virtual DOM re-render bottleneck!
+      const nodeMap = {};
+      for (let i = 0; i < activeNodes.length; i++) {
+        const n = activeNodes[i];
+        nodeMap[n.id] = n;
+      }
+
+      const lines = svgRef.current?.querySelectorAll('.graph-link');
+      if (lines) {
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const srcId = line.getAttribute('data-source-id');
+          const tgtId = line.getAttribute('data-target-id');
+          const srcNode = nodeMap[srcId];
+          const tgtNode = nodeMap[tgtId];
+          if (srcNode && tgtNode) {
+            line.setAttribute('x1', srcNode.x);
+            line.setAttribute('y1', srcNode.y);
+            line.setAttribute('x2', tgtNode.x);
+            line.setAttribute('y2', tgtNode.y);
+          }
+        }
+      }
+
+      const nodeContainers = svgRef.current?.querySelectorAll('.graph-node-container');
+      if (nodeContainers) {
+        for (let i = 0; i < nodeContainers.length; i++) {
+          const el = nodeContainers[i];
+          const nodeId = el.getAttribute('data-node-id');
+          const n = nodeMap[nodeId];
+          if (n) {
+            el.setAttribute('transform', `translate(${n.x}, ${n.y})`);
+          }
+        }
+      }
+
+      const labels = svgRef.current?.querySelectorAll('.link-label');
+      if (labels) {
+        for (let i = 0; i < labels.length; i++) {
+          const label = labels[i];
+          const srcId = label.getAttribute('data-source-id');
+          const tgtId = label.getAttribute('data-target-id');
+          const srcNode = nodeMap[srcId];
+          const tgtNode = nodeMap[tgtId];
+          if (srcNode && tgtNode) {
+            label.setAttribute('transform', `translate(${(srcNode.x + tgtNode.x) / 2}, ${(srcNode.y + tgtNode.y) / 2})`);
+          }
+        }
+      }
 
       animFrameId = requestAnimationFrame(runFrame);
     };
@@ -350,6 +511,24 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
       draggingNodeRef.current = null;
       alphaRef.current = 1.0; // Fully reheat to settle after release
     }
+  };
+
+  const handleNodeMouseEnter = (node) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredNode(node);
+    }, 30);
+  };
+
+  const handleNodeMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredNode(null);
+    }, 30);
   };
 
   // Zoom interaction
@@ -468,6 +647,21 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
               </button>
             );
           })}
+          <div className="h-4 w-[1px] bg-white/10 mx-2" />
+          <button
+            onClick={() => {
+              setShowNearRelations(prev => !prev);
+              alphaRef.current = 1.0; // Reheat to reorganize
+            }}
+            className={`text-[10px] px-3.5 py-1 rounded-full border transition-all duration-200 flex items-center gap-1.5 font-bold uppercase tracking-wider ${
+              showNearRelations
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                : 'border-white/10 bg-slate-900/50 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {showNearRelations ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+            <span>Show Near Relations ({links.filter(l => l.relation === 'NEAR' || (l.relation && l.relation.toUpperCase() === 'NEAR')).length})</span>
+          </button>
         </section>
 
         {/* SVG Visualization Canvas */}
@@ -518,6 +712,11 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
                   const isHovered = hoveredNode && (hoveredNode.id === link.source.id || hoveredNode.id === link.target.id);
                   const isSelected = selectedNode && (selectedNode.id === link.source.id || selectedNode.id === link.target.id);
                   
+                  const isNear = link.relation === 'NEAR' || (link.relation && link.relation.toUpperCase() === 'NEAR');
+                  // Level of Detail (LOD): Hide NEAR links when zoomed out unless connected to active node
+                  const showNearLink = transform.k >= 0.5 || isHovered || isSelected;
+                  if (isNear && !showNearLink) return null;
+                  
                   const strokeColor = isSelected || isHovered ? '#22d3ee' : 'rgba(148, 163, 184, 0.25)';
                   const strokeWidth = isSelected || isHovered ? 2 : 1;
                   const opacity = hoveredNode && !isHovered ? 0.15 : 1;
@@ -526,6 +725,9 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
                   return (
                     <g key={idx} style={{ opacity, transition: 'opacity 0.2s' }}>
                       <line
+                        className="graph-link"
+                        data-source-id={link.source.id}
+                        data-target-id={link.target.id}
                         x1={link.source.x}
                         y1={link.source.y}
                         x2={link.target.x}
@@ -537,7 +739,12 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
                       />
                       {/* Render relationship type label on link mid-point when hovered/selected */}
                       {(isHovered || isSelected) && (
-                        <g transform={`translate(${(link.source.x + link.target.x) / 2}, ${(link.source.y + link.target.y) / 2})`}>
+                        <g 
+                          className="link-label"
+                          data-source-id={link.source.id}
+                          data-target-id={link.target.id}
+                          transform={`translate(${(link.source.x + link.target.x) / 2}, ${(link.source.y + link.target.y) / 2})`}
+                        >
                           <rect
                             x="-32"
                             y="-8"
@@ -573,6 +780,9 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
                   const isHovered = hoveredNode?.id === node.id;
                   const isNeighbor = hoveredNode && nodeConnections[hoveredNode.id]?.has(node.id);
                   
+                  // Level of Detail (LOD): Hide node labels when zoomed out unless hovered, selected or neighbor
+                  const showLabel = transform.k >= 0.6 || isSelected || isHovered || isNeighbor;
+                  
                   const r = node.id === 'node-focus-polygon' ? 24 : 18;
                   const glowColor = isSelected || isHovered ? '#22d3ee' : theme.glow;
                   const strokeColor = isSelected || isHovered ? '#22d3ee' : theme.stroke;
@@ -589,12 +799,13 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
                   return (
                     <g
                       key={node.id}
-                      className="graph-node cursor-pointer group"
+                      className="graph-node cursor-pointer group graph-node-container"
+                      data-node-id={node.id}
                       transform={`translate(${node.x}, ${node.y})`}
                       style={{ opacity, transition: 'opacity 0.2s' }}
                       onMouseDown={(e) => handleNodeDragStart(e, node)}
-                      onMouseEnter={() => setHoveredNode(node)}
-                      onMouseLeave={() => setHoveredNode(null)}
+                      onMouseEnter={() => handleNodeMouseEnter(node)}
+                      onMouseLeave={handleNodeMouseLeave}
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedNode(node);
@@ -649,16 +860,18 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
                       )}
 
                       {/* Text Label */}
-                      <text
-                        textAnchor="middle"
-                        y={r + 14}
-                        fill={isSelected ? '#22d3ee' : '#cbd5e1'}
-                        fontSize="9"
-                        fontWeight={isSelected ? 'bold' : 'normal'}
-                        className="pointer-events-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
-                      >
-                        {node.label}
-                      </text>
+                      {showLabel && (
+                        <text
+                          textAnchor="middle"
+                          y={r + 14}
+                          fill={isSelected ? '#22d3ee' : '#cbd5e1'}
+                          fontSize="9"
+                          fontWeight={isSelected ? 'bold' : 'normal'}
+                          className="pointer-events-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+                        >
+                          {node.label}
+                        </text>
+                      )}
                     </g>
                   );
                 })}

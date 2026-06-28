@@ -538,10 +538,10 @@ public class KnowledgeContextService {
         // 1. Query Polygon Metrics (Centroid, Area, Perimeter)
         String metricsSql = 
             "SELECT " +
-            "  ST_Area(ST_GeomFromText(?, 4326)::geography) / 1000000.0 as area_sq_km, " +
-            "  ST_Perimeter(ST_GeomFromText(?, 4326)::geography) / 1000.0 as perimeter_km, " +
-            "  ST_X(ST_Centroid(ST_GeomFromText(?, 4326))) as centroid_lon, " +
-            "  ST_Y(ST_Centroid(ST_GeomFromText(?, 4326))) as centroid_lat";
+            "  ST_Area(ST_MakeValid(ST_GeomFromText(?, 4326))::geography) / 1000000.0 as area_sq_km, " +
+            "  ST_Perimeter(ST_MakeValid(ST_GeomFromText(?, 4326))::geography) / 1000.0 as perimeter_km, " +
+            "  ST_X(ST_Centroid(ST_MakeValid(ST_GeomFromText(?, 4326)))) as centroid_lon, " +
+            "  ST_Y(ST_Centroid(ST_MakeValid(ST_GeomFromText(?, 4326)))) as centroid_lat";
         
         List<Map<String, Object>> metricsRows = jdbcTemplate.queryForList(metricsSql, wkt, wkt, wkt, wkt);
         if (metricsRows.isEmpty()) {
@@ -842,7 +842,9 @@ public class KnowledgeContextService {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("totalEntitiesDiscovered", entities.size());
         metadata.put("totalRelationshipsDiscovered", relationships.size());
-        metadata.put("responseTimeMs", System.currentTimeMillis() - startTime);
+        long duration = System.currentTimeMillis() - startTime;
+        log.info("Finished building polygon knowledge context in {} ms", duration);
+        metadata.put("responseTimeMs", duration);
 
         return new KnowledgeContext(
             Map.of("lat", centroidLat, "lon", centroidLon),
@@ -856,29 +858,37 @@ public class KnowledgeContextService {
     private List<Map<String, Object>> queryIntersectingFeatures(String wkt) {
         String sql = 
             "WITH user_drawn_polygon AS ( " +
-            "  SELECT ST_GeomFromText(?, 4326) AS geom " +
-            ") " +
-            "SELECT id, class_name, osm_name, kg_entity_id, kg_entity_name, distance_to_centroid_m, centroid_lon, centroid_lat, area_sq_km, is_fully_contained FROM ( " +
-            "  SELECT DISTINCT ON (l.id) l.id, l.class_name, r.name as osm_name, " +
-            "         k.id as kg_entity_id, k.entity_name as kg_entity_name, " +
-            "         ST_Distance(l.geom::geography, ST_Centroid(p.geom)::geography) as distance_to_centroid_m, " +
-            "         ST_X(ST_Centroid(l.geom)) as centroid_lon, ST_Y(ST_Centroid(l.geom)) as centroid_lat, " +
-            "         ST_Area(l.geom::geography) / 1000000.0 as area_sq_km, " +
-            "         ST_Contains(p.geom, l.geom) as is_fully_contained " +
+            "  SELECT ST_MakeValid(ST_GeomFromText(?, 4326)) AS geom " +
+            "), " +
+            "intersecting_candidates AS ( " +
+            "  SELECT l.id, l.class_name, l.geom, " +
+            "         ST_Distance(l.geom::geography, ST_Centroid(p.geom)::geography) as distance_to_centroid_m " +
             "  FROM public.lulc_geometries l " +
             "  CROSS JOIN user_drawn_polygon p " +
-            "  LEFT JOIN public.kg_entities k ON CAST(l.id as varchar) = k.geometry_ref_id " +
-            "  LEFT JOIN public.raw_landuse r ON l.geom && r.wkb_geometry AND ST_Intersects(l.geom, r.wkb_geometry) " +
+            "  WHERE ST_Intersects(l.geom, p.geom) " +
+            "  ORDER BY distance_to_centroid_m ASC " +
+            "  LIMIT 150 " +
+            ") " +
+            "SELECT id, class_name, osm_name, kg_entity_id, kg_entity_name, distance_to_centroid_m, centroid_lon, centroid_lat, area_sq_km, is_fully_contained FROM ( " +
+            "  SELECT DISTINCT ON (c.id) c.id, c.class_name, r.name as osm_name, " +
+            "         k.id as kg_entity_id, k.entity_name as kg_entity_name, " +
+            "         c.distance_to_centroid_m, " +
+            "         ST_X(ST_Centroid(c.geom)) as centroid_lon, ST_Y(ST_Centroid(c.geom)) as centroid_lat, " +
+            "         ST_Area(c.geom::geography) / 1000000.0 as area_sq_km, " +
+            "         ST_Contains(p.geom, c.geom) as is_fully_contained " +
+            "  FROM intersecting_candidates c " +
+            "  CROSS JOIN user_drawn_polygon p " +
+            "  LEFT JOIN public.kg_entities k ON CAST(c.id as varchar) = k.geometry_ref_id " +
+            "  LEFT JOIN public.raw_landuse r ON c.geom && r.wkb_geometry AND ST_Intersects(c.geom, r.wkb_geometry) " +
             "    AND r.name IS NOT NULL " +
             "    AND ( " +
-            "      (l.class_name = 'River' AND (r.\"natural\" = 'water' OR r.water IS NOT NULL OR r.name ILIKE '%river%' OR r.name ILIKE '%ganga%' OR r.name ILIKE '%varuna%' OR r.name ILIKE '%assi%')) " +
-            "      OR (l.class_name = 'Hospital' AND (r.amenity = 'hospital' OR r.building = 'hospital' OR r.name ILIKE '%hospital%' OR r.name ILIKE '%clinic%')) " +
-            "      OR (l.class_name = 'School' AND (r.amenity = 'school' OR r.building = 'school' OR r.name ILIKE '%school%' OR r.name ILIKE '%college%')) " +
-            "      OR (l.class_name = 'Gym' AND (r.amenity = 'gym' OR r.name ILIKE '%gym%')) " +
-            "      OR (l.class_name NOT IN ('Road', 'River', 'Hospital', 'School', 'Gym')) " +
+            "      (c.class_name = 'River' AND (r.\"natural\" = 'water' OR r.water IS NOT NULL OR r.name ILIKE '%river%' OR r.name ILIKE '%ganga%' OR r.name ILIKE '%varuna%' OR r.name ILIKE '%assi%')) " +
+            "      OR (c.class_name = 'Hospital' AND (r.amenity = 'hospital' OR r.building = 'hospital' OR r.name ILIKE '%hospital%' OR r.name ILIKE '%clinic%')) " +
+            "      OR (c.class_name = 'School' AND (r.amenity = 'school' OR r.building = 'school' OR r.name ILIKE '%school%' OR r.name ILIKE '%college%')) " +
+            "      OR (c.class_name = 'Gym' AND (r.amenity = 'gym' OR r.name ILIKE '%gym%')) " +
+            "      OR (c.class_name NOT IN ('Road', 'River', 'Hospital', 'School', 'Gym')) " +
             "    ) " +
-            "  WHERE ST_Intersects(l.geom, p.geom) " +
-            "  ORDER BY l.id, distance_to_centroid_m ASC " +
+            "  ORDER BY c.id, c.distance_to_centroid_m ASC " +
             ") sub " +
             "ORDER BY distance_to_centroid_m ASC " +
             "LIMIT 100";

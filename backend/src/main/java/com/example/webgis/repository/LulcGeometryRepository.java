@@ -13,7 +13,7 @@ import java.util.List;
 public interface LulcGeometryRepository extends JpaRepository<LulcGeometry, Long> {
 
     @Query(value = "WITH user_drawn_polygon AS (" +
-                   "  SELECT ST_GeomFromText(:wkt, 4326) AS geom" +
+                   "  SELECT ST_MakeValid(ST_GeomFromText(:wkt, 4326)) AS geom" +
                    ") " +
                    "SELECT " +
                    "  l.class_name AS className, " +
@@ -29,15 +29,21 @@ public interface LulcGeometryRepository extends JpaRepository<LulcGeometry, Long
      * the geometry column and converting it to a JTS object instead of a String.
      */
     @Query(value = "WITH user_drawn_polygon AS (" +
-                   "  SELECT ST_GeomFromText(:wkt, 4326) AS geom" +
+                   "  SELECT ST_MakeValid(ST_GeomFromText(:wkt, 4326)) AS geom" +
+                   "), " +
+                   "intersections AS (" +
+                   "  SELECT " +
+                   "    l.class_name AS className, " +
+                   "    ST_Intersection(l.geom, p.geom) as intersection_geom " +
+                   "  FROM lulc_geometries l, user_drawn_polygon p " +
+                   "  WHERE ST_Intersects(l.geom, p.geom)" +
                    ") " +
                    "SELECT " +
-                   "  l.class_name AS className, " +
-                   "  CAST(ST_AsGeoJSON(ST_Intersection(l.geom, p.geom)) AS text) AS geojson " +
-                   "FROM lulc_geometries l, user_drawn_polygon p " +
-                   "WHERE ST_Intersects(l.geom, p.geom)" +
-                   "  AND ST_IsValid(ST_Intersection(l.geom, p.geom))" +
-                   "  AND NOT ST_IsEmpty(ST_Intersection(l.geom, p.geom))", nativeQuery = true)
+                   "  className, " +
+                   "  CAST(ST_AsGeoJSON(intersection_geom) AS text) AS geojson " +
+                   "FROM intersections " +
+                   "WHERE ST_IsValid(intersection_geom) " +
+                   "  AND NOT ST_IsEmpty(intersection_geom)", nativeQuery = true)
     List<LulcGeomProjection> findIntersectedGeometries(@Param("wkt") String wkt);
 }
 
