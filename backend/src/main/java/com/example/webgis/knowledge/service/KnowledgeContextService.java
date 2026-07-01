@@ -15,6 +15,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 
+import com.example.webgis.layer.GisQueryExecutor;
+
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -22,6 +24,7 @@ public class KnowledgeContextService {
 
     private final JdbcTemplate jdbcTemplate;
     private final TerrainService terrainService;
+    private final GisQueryExecutor queryExecutor;
 
     @Transactional
     public Map<String, Object> saveCustomMarker(String name, String layerName, double lon, double lat) {
@@ -392,6 +395,12 @@ public class KnowledgeContextService {
             floodRisk = "Medium";
         }
         summary.put("floodRisk", floodRisk);
+
+        try {
+            summary.put("multiLayerData", queryExecutor.queryPoint(lon, lat));
+        } catch (Exception e) {
+            log.error("Failed to add multi-layer data to point summary: {}", e.getMessage());
+        }
 
         // 6. Compile Metadata
         Map<String, Object> metadata = new LinkedHashMap<>();
@@ -837,6 +846,12 @@ public class KnowledgeContextService {
             floodRisk = "Medium";
         }
         summary.put("floodRisk", floodRisk);
+
+        try {
+            summary.put("multiLayerData", queryExecutor.queryPolygon(coords));
+        } catch (Exception e) {
+            log.error("Failed to add multi-layer data to polygon summary: {}", e.getMessage());
+        }
 
         // Metadata
         Map<String, Object> metadata = new LinkedHashMap<>();
