@@ -2772,9 +2772,10 @@ out center;`;
   const selectedAreaAnalysis = useMemo(() => {
     return analyzeSelectedArea({
       polygonFeature: selectedAreaPolygon,
-      layers
+      layers,
+      intelEntities
     });
-  }, [layers, selectedAreaPolygon, drawRevision]);
+  }, [layers, selectedAreaPolygon, drawRevision, intelEntities]);
 
   const areaMetrics = useMemo(() => {
     if (!selectedAreaAnalysis) {
@@ -3921,6 +3922,32 @@ out center;`;
                   const elevation = mData["local-postgis"]?.elevationMeters || 80.5;
                   const lulc = mData["local-postgis"]?.lulcClass || "BuiltUp";
 
+                  // INTEGRATE active AI Intel Entities!
+                  const nearbyIntel = intelEntities.filter(e => {
+                    const dist = calculateDistanceBetweenCoordinates(
+                      [e.longitude, e.latitude],
+                      [lon, lat]
+                    );
+                    return dist <= knowledgeRadius;
+                  });
+
+                  const floodAlerts = nearbyIntel.filter(e => 
+                    e.extractedData.entityType?.toLowerCase().includes('flood') || 
+                    e.originalText?.toLowerCase().includes('flood') ||
+                    e.originalText?.toLowerCase().includes('water logging')
+                  );
+                  const utilityAlerts = nearbyIntel.filter(e =>
+                    e.extractedData.entityType?.toLowerCase().includes('electricity') ||
+                    e.extractedData.entityType?.toLowerCase().includes('power') ||
+                    e.extractedData.entityType?.toLowerCase().includes('crime') ||
+                    e.extractedData.entityType?.toLowerCase().includes('medical')
+                  );
+                  const damageAlerts = nearbyIntel.filter(e =>
+                    e.extractedData.entityType?.toLowerCase().includes('road') ||
+                    e.extractedData.entityType?.toLowerCase().includes('damage') ||
+                    e.extractedData.entityType?.toLowerCase().includes('construction')
+                  );
+
                   // Friendly land type label
                   const landTypeMap = { BuiltUp: "Built-Up / Urban Area", Forest: "Forest / Green Zone", Agricultural: "Farmland", WaterBody: "Near Water Body", Wetland: "Wetland / Marshy Area", Barren: "Empty / Barren Land" };
                   const friendlyLand = landTypeMap[lulc] || lulc;
@@ -4020,7 +4047,14 @@ out center;`;
                   let buildTitle = "Safe for Construction";
                   let buildAdvice = "The land is flat (slope: " + slope.toFixed(1) + "°) at " + elevation.toFixed(0) + "m height. Standard foundations will work. No special engineering precautions needed for houses or buildings up to 3 floors.";
                   let buildColor = "border-emerald-500/20 bg-emerald-500/5";
-                  if (slope > 15) {
+
+                  if (damageAlerts.length > 0) {
+                    const nearestDamage = damageAlerts[0];
+                    buildIcon = nearestDamage.extractedData.severity === 'HIGH' ? "🔴" : "🟡";
+                    buildTitle = `Construction Warning (AI Incident Alert)`;
+                    buildAdvice = `AI incident report detected nearby: "${nearestDamage.extractedData.title}". Details: ${nearestDamage.extractedData.summary}. Caution is recommended when planning logistics or building here.`;
+                    buildColor = nearestDamage.extractedData.severity === 'HIGH' ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5";
+                  } else if (slope > 15) {
                     buildIcon = "🔴";
                     buildTitle = "Steep Land — Extra Care Needed";
                     buildAdvice = "This land has a steep slope (" + slope.toFixed(1) + "°). Building here requires reinforced foundations and retaining walls. There is also a risk of soil sliding during heavy rains. Get a soil stability test done before construction.";
@@ -4067,16 +4101,26 @@ out center;`;
                   }
 
                   // Flood risk summary from summary context
-                  const floodRisk = knowledgeContext.summary?.floodRisk || "Low";
+                  let floodRisk = knowledgeContext.summary?.floodRisk || "Low";
+                  const hasNearbyFloodAlert = floodAlerts.length > 0;
+                  if (hasNearbyFloodAlert) {
+                    floodRisk = "High";
+                  }
+
                   let floodIcon = "🟢";
                   let floodTitle = "Low Flood Risk";
                   let floodAdvice = "This area is at a safe elevation and away from major river floodplains. Low chance of flooding during monsoon.";
                   let floodColor = "border-emerald-500/20 bg-emerald-500/5";
                   if (floodRisk === "High") {
                     floodIcon = "🔴";
-                    floodTitle = "High Flood Risk Area";
-                    floodAdvice = "This location is close to a river floodplain and at low elevation. During heavy monsoon rains, water logging and flooding is likely. Avoid ground-floor storage of valuables. Build above plinth level.";
+                    floodTitle = hasNearbyFloodAlert ? "High Flood Risk (AI Incident Alert)" : "High Flood Risk Area";
                     floodColor = "border-rose-500/20 bg-rose-500/5";
+                    if (hasNearbyFloodAlert) {
+                      const nearestAlert = floodAlerts[0];
+                      floodAdvice = `WARNING: Active flood/water-logging report nearby! Title: "${nearestAlert.extractedData.title}". Summary: ${nearestAlert.extractedData.summary} (Reported: "${nearestAlert.originalText}")`;
+                    } else {
+                      floodAdvice = "This location is close to a river floodplain and at low elevation. During heavy monsoon rains, water logging and flooding is likely. Avoid ground-floor storage of valuables. Build above plinth level.";
+                    }
                   } else if (floodRisk === "Medium") {
                     floodIcon = "🟡";
                     floodTitle = "Moderate Flood Risk";
@@ -4096,6 +4140,20 @@ out center;`;
                     };
                   }
 
+                  // Dynamic utility / other alert cards from AI
+                  const utilityAlertsCards = utilityAlerts.map((alert, idx) => {
+                    const icon = alert.extractedData.entityType === 'Electricity Failure' || alert.extractedData.entityType === 'Power' ? "⚡" : 
+                                 alert.extractedData.entityType === 'Crime' ? "🚨" : "🏥";
+                    const color = alert.extractedData.severity === 'HIGH' ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5";
+                    return {
+                      icon,
+                      title: `AI Alert: ${alert.extractedData.title} (${alert.extractedData.entityType})`,
+                      advice: `Active local report: ${alert.extractedData.summary}. Severity: ${alert.extractedData.severity}.`,
+                      color,
+                      id: `utility-alert-${idx}`
+                    };
+                  });
+
                   const insightCards = [
                     { icon: farmIcon, title: farmTitle, advice: farmAdvice, color: farmColor, id: "farm" },
                     { icon: solarIcon, title: solarTitle, advice: solarAdvice, color: solarColor, id: "solar" },
@@ -4103,6 +4161,7 @@ out center;`;
                     { icon: buildIcon, title: buildTitle, advice: buildAdvice, color: buildColor, id: "build" },
                     { icon: weatherIcon, title: weatherTitle, advice: weatherAdvice, color: weatherColor, id: "weather" },
                     { icon: floodIcon, title: floodTitle, advice: floodAdvice, color: floodColor, id: "flood" },
+                    ...utilityAlertsCards
                   ];
 
                   return (

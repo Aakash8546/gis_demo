@@ -1,6 +1,6 @@
 import GeoJSON from 'ol/format/GeoJSON';
 import { getArea, getLength, getDistance } from 'ol/sphere';
-import { toLonLat } from 'ol/proj';
+import { toLonLat, fromLonLat } from 'ol/proj';
 
 const geojsonFormat = new GeoJSON();
 
@@ -47,7 +47,7 @@ export function countGeometries(geojson) {
   }, {});
 }
 
-export function analyzeSelectedArea({ polygonFeature, layers }) {
+export function analyzeSelectedArea({ polygonFeature, layers, intelEntities }) {
   if (!polygonFeature) {
     return null;
   }
@@ -105,6 +105,26 @@ export function analyzeSelectedArea({ polygonFeature, layers }) {
 
     layerCounts[layer.id] = count;
   });
+
+  // INTEGRATE ACTIVE AI INTEL ENTITIES
+  if (intelEntities && intelEntities.length > 0) {
+    let count = 0;
+    intelEntities.forEach((entity) => {
+      const coords = fromLonLat([entity.longitude, entity.latitude]);
+      if (polyGeom.intersectsCoordinate(coords)) {
+        count += 1;
+        featuresInside.push({
+          layerId: 'ai-intel',
+          layerName: 'AI Intel Layer',
+          name: `[${entity.extractedData.entityType}] ${entity.extractedData.title}`,
+          geometryType: 'Point'
+        });
+      }
+    });
+    if (count > 0) {
+      layerCounts['ai-intel'] = count;
+    }
+  }
 
   return {
     areaSquareMeters,
