@@ -1434,7 +1434,7 @@ out center;`;
     }
   }, []);
 
-  const getSuitabilityScore = useCallback((summary) => {
+  const getSuitabilityScore = useCallback((summary, nearbyIntel = []) => {
     if (!summary) return { score: 0, label: 'No Data', color: 'text-slate-400', stroke: '#64748b', recommendations: [] };
 
     let score = 50; // baseline
@@ -1484,10 +1484,28 @@ out center;`;
     }
 
     // Flood Risk penalty
-    const risk = summary.floodRisk;
+    let risk = summary.floodRisk;
+    const floodAlerts = nearbyIntel.filter(e => 
+      e.extractedData.entityType?.toLowerCase().includes('flood') || 
+      e.originalText?.toLowerCase().includes('flood') ||
+      e.originalText?.toLowerCase().includes('water logging')
+    );
+    const hasNearbyFloodAlert = floodAlerts.length > 0;
+    if (hasNearbyFloodAlert) {
+      risk = 'High';
+    }
+
     if (risk === 'High') {
       score -= 30;
-      recs.push({ type: 'danger', text: 'High Flood Risk: Proximity to Ganges/Varuna floodplain. Reinforced foundation required.', category: 'WaterBody' });
+      if (hasNearbyFloodAlert) {
+        recs.push({
+          type: 'danger',
+          text: `🚨 High Flood Risk (AI Alert): Active flood/water-logging report nearby: "${floodAlerts[0].extractedData.title}".`,
+          category: 'WaterBody'
+        });
+      } else {
+        recs.push({ type: 'danger', text: 'High Flood Risk: Proximity to Ganges/Varuna floodplain. Reinforced foundation required.', category: 'WaterBody' });
+      }
     } else if (risk === 'Medium') {
       score -= 15;
       recs.push({ type: 'warning', text: 'Moderate Flood Risk: Proximity to water system. Drainage audit recommended.', category: 'WaterBody' });
@@ -1500,6 +1518,39 @@ out center;`;
     const forest = summary.forestAreaSqKm || 0.0;
     if (forest > 0.1) {
       recs.push({ type: 'success', text: `Eco-rich: substantial green cover (${forest} sq km) nearby.`, category: 'Forest' });
+    }
+
+    // Utility alerts integration
+    const utilityAlerts = nearbyIntel.filter(e =>
+      e.extractedData.entityType?.toLowerCase().includes('electricity') ||
+      e.extractedData.entityType?.toLowerCase().includes('power') ||
+      e.extractedData.entityType?.toLowerCase().includes('crime') ||
+      e.extractedData.entityType?.toLowerCase().includes('medical')
+    );
+    if (utilityAlerts.length > 0) {
+      const isHigh = utilityAlerts.some(e => e.extractedData.severity === 'HIGH');
+      score -= isHigh ? 15 : 8;
+      recs.push({
+        type: isHigh ? 'danger' : 'warning',
+        text: `⚡ Utility / Safety Alert (AI Alert): "${utilityAlerts[0].extractedData.title}". ${utilityAlerts[0].extractedData.summary}`,
+        category: 'Hospital'
+      });
+    }
+
+    // Road damage & construction alerts integration
+    const damageAlerts = nearbyIntel.filter(e =>
+      e.extractedData.entityType?.toLowerCase().includes('road') ||
+      e.extractedData.entityType?.toLowerCase().includes('damage') ||
+      e.extractedData.entityType?.toLowerCase().includes('construction')
+    );
+    if (damageAlerts.length > 0) {
+      const isHigh = damageAlerts.some(e => e.extractedData.severity === 'HIGH');
+      score -= isHigh ? 20 : 10;
+      recs.push({
+        type: isHigh ? 'danger' : 'warning',
+        text: `🚧 Road / Logistics Alert (AI Alert): "${damageAlerts[0].extractedData.title}". ${damageAlerts[0].extractedData.summary}`,
+        category: 'Road'
+      });
     }
 
     // Bound score
@@ -3670,7 +3721,16 @@ out center;`;
                 {/* 2. Suitability Gauge Card */}
                 {(() => {
                   try {
-                  const suitability = getSuitabilityScore(knowledgeContext.summary);
+                  const lat = selectedCoordinates ? selectedCoordinates[1] : null;
+                  const lon = selectedCoordinates ? selectedCoordinates[0] : null;
+                  const nearbyIntel = (lat !== null && lon !== null) ? intelEntities.filter(e => {
+                    const dist = calculateDistanceBetweenCoordinates(
+                      [e.longitude, e.latitude],
+                      [lon, lat]
+                    );
+                    return dist <= knowledgeRadius;
+                  }) : [];
+                  const suitability = getSuitabilityScore(knowledgeContext.summary, nearbyIntel);
                   const badgeColorClass = 
                     suitability.score >= 75 ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' :
                     suitability.score >= 50 ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20' :
@@ -3724,7 +3784,16 @@ out center;`;
                 {/* 3. Location Highlights */}
                 {(() => {
                   try {
-                  const suitability = getSuitabilityScore(knowledgeContext.summary);
+                  const lat = selectedCoordinates ? selectedCoordinates[1] : null;
+                  const lon = selectedCoordinates ? selectedCoordinates[0] : null;
+                  const nearbyIntel = (lat !== null && lon !== null) ? intelEntities.filter(e => {
+                    const dist = calculateDistanceBetweenCoordinates(
+                      [e.longitude, e.latitude],
+                      [lon, lat]
+                    );
+                    return dist <= knowledgeRadius;
+                  }) : [];
+                  const suitability = getSuitabilityScore(knowledgeContext.summary, nearbyIntel);
                   if (suitability.recommendations.length === 0) return null;
 
                   return (
