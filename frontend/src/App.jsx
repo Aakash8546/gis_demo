@@ -3681,45 +3681,13 @@ out center;`;
               </div>
             ) : !knowledgeContext ? (
               <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/20 p-6 text-xs text-slate-400 italic leading-relaxed text-center space-y-3">
-                {selectedAreaCoords ? (
-                  <>
-                    <div className="flex justify-center">
-                      <Brain className="h-8 w-8 text-cyan-400 animate-pulse" />
-                    </div>
-                    <p className="font-semibold text-slate-300">Drawn Area Ready</p>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
-                      Inspect suitability, DEM elevations, LULC class coverage, and semantic entities in your selected boundary by exploring its Knowledge Graph.
-                    </p>
-                    <button
-                      onClick={fetchPolygonKnowledgeContext}
-                      disabled={polygonKnowledgeLoading}
-                      type="button"
-                      className="w-full flex items-center justify-center gap-2 rounded-xl py-2 px-3 text-xs font-bold text-slate-950 bg-cyan-400 hover:bg-cyan-300 transition-all mt-2 pointer-events-auto"
-                    >
-                      {polygonKnowledgeLoading ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>Generating Area Graph...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Brain className="h-3.5 w-3.5" />
-                          <span>Visualize Area KG</span>
-                        </>
-                      )}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex justify-center">
-                      <MapPin className="h-8 w-8 text-cyan-400/50 animate-bounce" />
-                    </div>
-                    <p className="font-semibold text-slate-300">No Location Selected</p>
-                    <p className="text-[11px] text-slate-400">
-                      Click anywhere on the map to run location suitability audit, or draw a polygon area to inspect its semantic Knowledge Graph.
-                    </p>
-                  </>
-                )}
+                <div className="flex justify-center">
+                  <MapPin className="h-8 w-8 text-cyan-400/50 animate-bounce" />
+                </div>
+                <p className="font-semibold text-slate-300">No Location Selected</p>
+                <p className="text-[11px] text-slate-400">
+                  Click anywhere on the map to run location suitability audit and query decision support details.
+                </p>
               </div>
             ) : (
               <DecisionPanelErrorBoundary key={selectedCoordinates ? selectedCoordinates.join(',') : 'none'}>
