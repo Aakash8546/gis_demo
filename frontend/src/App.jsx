@@ -2671,6 +2671,80 @@ out center;`;
     showStatus(`Added ${name} to ${layer.name}`);
   }
 
+  const handleExtractEntity = async (text) => {
+    if (!intelDraft.latitude || !intelDraft.longitude || !text.trim()) return;
+    
+    setIntelLoading(true);
+    setIntelError('');
+    try {
+      const response = await fetch('/api/entities/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          latitude: intelDraft.latitude,
+          longitude: intelDraft.longitude,
+          text: text
+        })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to extract entity from text.');
+      }
+      
+      const newEntity = await response.json();
+      setIntelEntities(current => [...current, newEntity]);
+      setSelectedIntelEntity(newEntity);
+      setIntelDialogOpen(false);
+      setIntelDraft({ latitude: null, longitude: null, text: '' });
+      showStatus(`Extracted entity: ${newEntity.extractedData.title}`);
+      
+      // Auto-focus the map on the new entity
+      if (mapRef.current) {
+        const coords = fromLonLat([newEntity.longitude, newEntity.latitude]);
+        mapRef.current.getView().animate({ center: coords, zoom: 16, duration: 600 });
+      }
+    } catch (err) {
+      setIntelError(err.message);
+    } finally {
+      setIntelLoading(false);
+    }
+  };
+
+  const deleteIntelEntity = async (id) => {
+    try {
+      const response = await fetch(`/api/entities/${id}`, {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        setIntelEntities(current => current.filter(e => e.id !== id));
+        setSelectedIntelEntity(null);
+        showStatus('Entity deleted.');
+      } else {
+        const errorData = await response.json();
+        showStatus(errorData.message || 'Failed to delete entity.');
+      }
+    } catch (err) {
+      console.error(err);
+      showStatus('Error deleting entity.');
+    }
+  };
+
+  const clearIntelSession = async () => {
+    try {
+      const response = await fetch('/api/entities', {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        setIntelEntities([]);
+        setSelectedIntelEntity(null);
+        showStatus('All entities cleared.');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
 
 
   const selectedAreaAnalysis = useMemo(() => {
