@@ -3,10 +3,8 @@ package com.example.webgis.controller;
 import com.example.webgis.dto.ExtractedData;
 import com.example.webgis.dto.GeoEntity;
 import com.example.webgis.dto.LocationIntelRequest;
-import com.example.webgis.service.LocationIntelService;
 import com.example.webgis.service.llm.LLMService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
@@ -18,7 +16,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -36,21 +33,18 @@ import java.util.UUID;
 }, allowCredentials = "true")
 public class LocationIntelController {
 
-    private final LocationIntelService locationIntelService;
     private final LLMService llmService;
     private final ObjectMapper objectMapper;
     private static final GeometryFactory GEOMETRY_FACTORY = new GeometryFactory(new PrecisionModel(), 4326);
 
-    public LocationIntelController(LocationIntelService locationIntelService, LLMService llmService, ObjectMapper objectMapper) {
-        this.locationIntelService = locationIntelService;
+    public LocationIntelController(LLMService llmService, ObjectMapper objectMapper) {
         this.llmService = llmService;
         this.objectMapper = objectMapper;
     }
 
     @PostMapping("/extract")
-    public ResponseEntity<?> extractEntity(@RequestBody @Valid LocationIntelRequest request, HttpSession session) {
-        String sessionId = session.getId();
-        log.info("Request to extract entity at ({}, {}) in session: {}", request.latitude(), request.longitude(), sessionId);
+    public ResponseEntity<?> extractEntity(@RequestBody @Valid LocationIntelRequest request) {
+        log.info("Request to extract entity at ({}, {})", request.latitude(), request.longitude());
 
         try {
             // 1. Call LLM Service to extract unstructured text to JSON
@@ -72,12 +66,10 @@ public class LocationIntelController {
                     extractedData,
                     Instant.now(),
                     "MANUAL",
-                    sessionId
+                    "frontend"
             );
 
-            // 5. Save to session-based storage
-            GeoEntity saved = locationIntelService.addEntity(sessionId, entity);
-            return ResponseEntity.ok(saved);
+            return ResponseEntity.ok(entity);
 
         } catch (Exception e) {
             log.error("Failed to extract entity info: ", e);
@@ -87,31 +79,5 @@ public class LocationIntelController {
                             "message", "Entity extraction failed: " + e.getMessage()
                     ));
         }
-    }
-
-    @GetMapping
-    public ResponseEntity<List<GeoEntity>> getEntities(HttpSession session) {
-        String sessionId = session.getId();
-        List<GeoEntity> entities = locationIntelService.getEntities(sessionId);
-        return ResponseEntity.ok(entities);
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteEntity(@PathVariable String id, HttpSession session) {
-        String sessionId = session.getId();
-        boolean deleted = locationIntelService.deleteEntity(sessionId, id);
-        if (deleted) {
-            return ResponseEntity.ok(java.util.Map.of("status", "success", "message", "Entity deleted successfully"));
-        } else {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(java.util.Map.of("status", "error", "message", "Entity not found in the current session"));
-        }
-    }
-
-    @DeleteMapping
-    public ResponseEntity<?> clearSession(HttpSession session) {
-        String sessionId = session.getId();
-        locationIntelService.clearSession(sessionId);
-        return ResponseEntity.ok(java.util.Map.of("status", "success", "message", "Session storage cleared"));
     }
 }
