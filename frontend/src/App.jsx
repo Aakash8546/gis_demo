@@ -2025,6 +2025,62 @@ out center;`;
     });
     drawLayer.set('kind', 'draw');
 
+    const ENTITY_TYPE_STYLES = {
+      'fire': { color: '#f97316', label: '🔥' },
+      'flood': { color: '#3b82f6', label: '💧' },
+      'road damage': { color: '#78716c', label: '🚧' },
+      'road': { color: '#78716c', label: '🚧' },
+      'electricity failure': { color: '#eab308', label: '⚡' },
+      'electricity': { color: '#eab308', label: '⚡' },
+      'power': { color: '#eab308', label: '⚡' },
+      'crime': { color: '#a855f7', label: '🚨' },
+      'medical': { color: '#10b981', label: '🏥' },
+      'construction': { color: '#f59e0b', label: '🏗️' },
+      'unknown': { color: '#64748b', label: '📍' }
+    };
+
+    const intelLayer = new VectorLayer({
+      source: intelSourceRef.current,
+      style: (feature) => {
+        const type = (feature.get('entityType') || 'unknown').toLowerCase();
+        let config = ENTITY_TYPE_STYLES.unknown;
+        for (const [key, val] of Object.entries(ENTITY_TYPE_STYLES)) {
+          if (type.includes(key)) {
+            config = val;
+            break;
+          }
+        }
+        
+        const title = feature.get('title') || '';
+        return [
+          new Style({
+            image: new CircleStyle({
+              radius: 16,
+              fill: new Fill({ color: layerFill(config.color, 0.25) }),
+              stroke: new Stroke({ color: config.color, width: 2 })
+            })
+          }),
+          new Style({
+            image: new CircleStyle({
+              radius: 7,
+              fill: new Fill({ color: config.color }),
+              stroke: new Stroke({ color: '#ffffff', width: 1.5 })
+            }),
+            text: new Text({
+              text: `${config.label} ${title}`,
+              offsetY: -20,
+              font: 'bold 11px Inter, ui-sans-serif, system-ui, sans-serif',
+              fill: new Fill({ color: '#ffffff' }),
+              stroke: new Stroke({ color: '#0f172a', width: 3 }),
+              overflow: true
+            })
+          })
+        ];
+      }
+    });
+    intelLayer.set('kind', 'overlay');
+    intelLayerRef.current = intelLayer;
+
     const map = new Map({
         target: mapElementRef.current,
         layers: [
@@ -2038,6 +2094,7 @@ out center;`;
           decisionSupportPinsLayer,
           clickedRelationshipTargetLayer,
           focusedHeritageLayer,
+          intelLayer,
           lulcLayerRef.current  // LULC renders on top so colors are visible
         ],
         overlays: [tooltipOverlay, hoverTooltipOverlay],
