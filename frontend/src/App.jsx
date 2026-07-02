@@ -840,15 +840,35 @@ function App() {
 
   // Clear all Decision Support and custom drawings when switching tabs or toggling WMS layers
   useEffect(() => {
+    intelModeRef.current = (activeSidebarTab === 'intel');
+    if (activeSidebarTab === 'intel') {
+      const fetchEntities = async () => {
+        try {
+          const response = await fetch('/api/entities');
+          if (response.ok) {
+            const data = await response.json();
+            setIntelEntities(data);
+          }
+        } catch (error) {
+          console.error('Failed to fetch AI entities:', error);
+        }
+      };
+      fetchEntities();
+    } else {
+      setSelectedIntelEntity(null);
+    }
+
     if (activeSidebarTab !== 'decision') {
       setSelectedCoordinates(null);
       setSelectedStatsCategory(null);
       setFocusedHeritage(null);
+      setKnowledgeContext(null);
       
       if (selectedPointSourceRef.current) selectedPointSourceRef.current.clear();
       if (decisionSupportPinsSourceRef.current) decisionSupportPinsSourceRef.current.clear();
       if (focusedHeritageSourceRef.current) focusedHeritageSourceRef.current.clear();
       if (highlightSourceRef.current) highlightSourceRef.current.clear();
+      if (clickedRelationshipTargetSourceRef.current) clickedRelationshipTargetSourceRef.current.clear();
       if (drawSourceRef.current) {
         drawSourceRef.current.clear();
         setDrawRevision(prev => prev + 1);
@@ -864,11 +884,13 @@ function App() {
     setSelectedCoordinates(null);
     setSelectedStatsCategory(null);
     setFocusedHeritage(null);
+    setKnowledgeContext(null);
     
     if (selectedPointSourceRef.current) selectedPointSourceRef.current.clear();
     if (decisionSupportPinsSourceRef.current) decisionSupportPinsSourceRef.current.clear();
     if (focusedHeritageSourceRef.current) focusedHeritageSourceRef.current.clear();
     if (highlightSourceRef.current) highlightSourceRef.current.clear();
+    if (clickedRelationshipTargetSourceRef.current) clickedRelationshipTargetSourceRef.current.clear();
     if (drawSourceRef.current) {
       drawSourceRef.current.clear();
       setDrawRevision(prev => prev + 1);
@@ -877,6 +899,28 @@ function App() {
     setShowKgVisualizer(false);
     setPolygonKnowledgeContext(null);
   }, [bhuvanLulcActive, bhuvanGeomorphActive, bhuvanWastelandActive]);
+
+  useEffect(() => {
+    if (!decisionSupportModeEnabled) {
+      setSelectedCoordinates(null);
+      setSelectedStatsCategory(null);
+      setFocusedHeritage(null);
+      setKnowledgeContext(null);
+      
+      if (selectedPointSourceRef.current) selectedPointSourceRef.current.clear();
+      if (decisionSupportPinsSourceRef.current) decisionSupportPinsSourceRef.current.clear();
+      if (focusedHeritageSourceRef.current) focusedHeritageSourceRef.current.clear();
+      if (highlightSourceRef.current) highlightSourceRef.current.clear();
+      if (clickedRelationshipTargetSourceRef.current) clickedRelationshipTargetSourceRef.current.clear();
+      if (drawSourceRef.current) {
+        drawSourceRef.current.clear();
+        setDrawRevision(prev => prev + 1);
+      }
+      
+      setShowKgVisualizer(false);
+      setPolygonKnowledgeContext(null);
+    }
+  }, [decisionSupportModeEnabled]);
 
   // Synchronize dynamic Decision Support pins on the map
   useEffect(() => {
@@ -981,6 +1025,23 @@ function App() {
       setSelectedFactSheetNode(null);
     }
   }, [knowledgeContext]);
+
+  // Synchronize Location Intelligence entities on the map
+  useEffect(() => {
+    if (!intelSourceRef.current) return;
+    intelSourceRef.current.clear();
+
+    intelEntities.forEach((entity) => {
+      const coords = fromLonLat([entity.longitude, entity.latitude]);
+      const feature = new Feature({
+        geometry: new Point(coords),
+        title: entity.extractedData.title,
+        entityType: entity.extractedData.entityType
+      });
+      feature.set('entityId', entity.id);
+      intelSourceRef.current.addFeature(feature);
+    });
+  }, [intelEntities]);
 
   const lulcSourceRef = useRef(new VectorSource());
   const lulcLayerRef = useRef(
