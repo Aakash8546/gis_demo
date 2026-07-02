@@ -5569,7 +5569,7 @@ out center;`;
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">Location Intelligence</p>
-                <h3 className="mt-2 text-xl font-semibold text-white">AI-Powered Entity Extraction</h3>
+                <h3 className="mt-2 text-xl font-semibold text-white">Log Incident Details</h3>
                 <p className="mt-2 text-xs text-slate-400 font-mono">
                   Coordinates: {intelDraft.latitude?.toFixed(5)}° N, {intelDraft.longitude?.toFixed(5)}° E
                 </p>
@@ -5620,7 +5620,7 @@ out center;`;
                       <span>Extracting...</span>
                     </>
                   ) : (
-                    <span>Extract Entity</span>
+                    <span>Log Incident</span>
                   )}
                 </button>
               </div>
