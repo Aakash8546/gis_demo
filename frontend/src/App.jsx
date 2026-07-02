@@ -5554,6 +5554,72 @@ out center;`;
       </div>
     ) : null}
 
+      {intelDialogOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-[28px] border border-white/10 bg-[#0b1728] p-5 shadow-2xl shadow-black/40">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">Location Intelligence</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">AI-Powered Entity Extraction</h3>
+                <p className="mt-2 text-xs text-slate-400 font-mono">
+                  Coordinates: {intelDraft.latitude?.toFixed(5)}° N, {intelDraft.longitude?.toFixed(5)}° E
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIntelDialogOpen(false)}
+                className="rounded-2xl border border-white/10 bg-white/5 p-2 text-slate-200"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <label className="block text-sm text-slate-200">
+                Describe observation, news, or incident
+                <textarea
+                  value={intelDraft.text}
+                  onChange={(event) => setIntelDraft((current) => ({ ...current, text: event.target.value }))}
+                  className="mt-2 w-full h-32 rounded-2xl border border-white/10 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400 custom-scrollbar resize-none"
+                  placeholder="e.g., Heavy water logging reported near Dashashwamedh Ghat. Traffic is slow and local municipality has sent pumps."
+                />
+              </label>
+
+              {intelError && (
+                <div className="p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 text-rose-300 text-xs leading-relaxed">
+                  {intelError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIntelDialogOpen(false)}
+                  className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={intelLoading || !intelDraft.text.trim()}
+                  onClick={() => handleExtractEntity(intelDraft.text)}
+                  className="rounded-2xl bg-cyan-400 disabled:bg-slate-800 disabled:text-slate-500 px-4 py-2 text-sm font-semibold text-slate-950 flex items-center gap-1.5"
+                >
+                  {intelLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Extracting...</span>
+                    </>
+                  ) : (
+                    <span>Extract Entity</span>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
     {layerDialogOpen ? (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
         <div className="w-full max-w-xl rounded-[28px] border border-white/10 bg-[#0b1728] p-5 shadow-2xl shadow-black/40">
