@@ -773,10 +773,28 @@ function App() {
   const intelLayerRef = useRef(null);
   const intelModeRef = useRef(false);
   const intelEntitiesRef = useRef([]);
+  // Track previous sidebar tab so we only clear decision support state when LEAVING it
+  const prevSidebarTabRef = useRef(null);
 
   useEffect(() => {
     intelEntitiesRef.current = intelEntities;
   }, [intelEntities]);
+
+  // Fetch intel entities on mount (so they always show on map regardless of active tab)
+  useEffect(() => {
+    const fetchEntities = async () => {
+      try {
+        const response = await fetch('/api/entities');
+        if (response.ok) {
+          const data = await response.json();
+          setIntelEntities(data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch AI entities on mount:', error);
+      }
+    };
+    fetchEntities();
+  }, []);
 
   const selectedAreaPolygon = useMemo(() => {
     return drawSourceRef.current
@@ -843,9 +861,11 @@ function App() {
     }
   }, [selectedCoordinates, knowledgeRadius, showBuffer, activeSidebarTab]);
 
-  // Clear all Decision Support and custom drawings when switching tabs or toggling WMS layers
+  // Clear Decision Support overlays only when LEAVING the decision tab — not when arriving at intel or others
   useEffect(() => {
     intelModeRef.current = (activeSidebarTab === 'intel');
+
+    // Refresh intel entities whenever we switch to the intel tab
     if (activeSidebarTab === 'intel') {
       const fetchEntities = async () => {
         try {
@@ -859,16 +879,16 @@ function App() {
         }
       };
       fetchEntities();
-    } else {
-      setSelectedIntelEntity(null);
     }
 
-    if (activeSidebarTab !== 'decision') {
+    // Only clear decision-support overlays when the tab we are LEAVING is 'decision'
+    const prevTab = prevSidebarTabRef.current;
+    if (prevTab === 'decision' && activeSidebarTab !== 'decision') {
       setSelectedCoordinates(null);
       setSelectedStatsCategory(null);
       setFocusedHeritage(null);
       setKnowledgeContext(null);
-      
+
       if (selectedPointSourceRef.current) selectedPointSourceRef.current.clear();
       if (decisionSupportPinsSourceRef.current) decisionSupportPinsSourceRef.current.clear();
       if (focusedHeritageSourceRef.current) focusedHeritageSourceRef.current.clear();
@@ -878,10 +898,12 @@ function App() {
         drawSourceRef.current.clear();
         setDrawRevision(prev => prev + 1);
       }
-      
+
       setShowKgVisualizer(false);
       setPolygonKnowledgeContext(null);
     }
+
+    prevSidebarTabRef.current = activeSidebarTab;
   }, [activeSidebarTab]);
 
   useEffect(() => {
@@ -3312,7 +3334,52 @@ out center;`;
                       </div>
                     </div>
 
-                    {/* LULC (Land Use Land Cover) Analysis */}
+                    {/* AI Intel Entities inside polygon */}
+                    {(() => {
+                      if (!intelEntities || intelEntities.length === 0 || !selectedAreaPolygon) return null;
+                      const polyGeom = selectedAreaPolygon.getGeometry();
+                      if (!polyGeom) return null;
+                      const entitiesInside = intelEntities.filter(e => {
+                        const coords = fromLonLat([e.longitude, e.latitude]);
+                        return polyGeom.intersectsCoordinate(coords);
+                      });
+                      if (entitiesInside.length === 0) return null;
+                      const SEVERITY_STYLE = {
+                        HIGH: 'bg-rose-500/10 text-rose-300 border-rose-500/20',
+                        MEDIUM: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
+                        LOW: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                      };
+                      return (
+                        <div className="rounded-xl border border-cyan-500/20 bg-slate-900/50 px-3.5 py-3 text-xs text-slate-300 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[9px] uppercase tracking-[0.15em] text-cyan-400 font-bold">🧠 AI Intel Inside ({entitiesInside.length})</p>
+                          </div>
+                          <div className="space-y-1.5 max-h-[12vh] overflow-y-auto pr-1 custom-scrollbar">
+                            {entitiesInside.map(entity => (
+                              <div
+                                key={entity.id}
+                                onClick={() => {
+                                  setSelectedIntelEntity(entity);
+                                  if (mapRef.current) {
+                                    mapRef.current.getView().animate({ center: fromLonLat([entity.longitude, entity.latitude]), zoom: 16, duration: 500 });
+                                  }
+                                }}
+                                className="rounded-lg bg-slate-950/50 border border-white/5 hover:border-cyan-500/30 px-2.5 py-1.5 cursor-pointer transition-all pointer-events-auto"
+                              >
+                                <div className="flex items-center gap-1.5 mb-0.5">
+                                  <span className={`text-[7px] uppercase font-bold px-1.5 py-0.5 rounded border ${SEVERITY_STYLE[entity.extractedData.severity] || SEVERITY_STYLE.LOW}`}>
+                                    {entity.extractedData.severity}
+                                  </span>
+                                  <span className="text-[8px] text-slate-400 font-mono">{entity.extractedData.entityType}</span>
+                                </div>
+                                <p className="text-xs font-semibold text-white truncate">{entity.extractedData.title}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     <div className="border-t border-white/10 pt-3 mt-3">
                       {/* Header + Layer Controls */}
                       <div className="flex items-center justify-between mb-2">
@@ -4715,215 +4782,67 @@ out center;`;
                   </div>
                 )}
 
-                {/* 7. Discovered KG Relationships */}
+                {/* 7. Nearby AI Intel Alerts (from Location Intelligence layer) */}
                 {(() => {
-                  try {
-                  const rels = knowledgeContext.relationships || [];
-                  const entities = knowledgeContext.entities || [];
-                  const groups = groupRelationships(rels, entities);
-
-                  // Count elements in each group
-                  const counts = {
-                    all: rels.length,
-                    healthEducation: groups.healthEducation.relations.length,
-                    environmentWater: groups.environmentWater.relations.length,
-                    transportation: groups.transportation.relations.length,
-                    settlementsIndustry: groups.settlementsIndustry.relations.length,
-                    other: groups.other.relations.length
+                  if (!intelEntities || intelEntities.length === 0) return null;
+                  // Filter entities within the buffer radius of the selected coordinates
+                  const lat = selectedCoordinates ? selectedCoordinates[1] : null;
+                  const lon = selectedCoordinates ? selectedCoordinates[0] : null;
+                  if (lat === null || lon === null) return null;
+                  const toRad = (d) => d * Math.PI / 180;
+                  const haversine = (lat1, lon1, lat2, lon2) => {
+                    const R = 6371000;
+                    const dLat = toRad(lat2 - lat1);
+                    const dLon = toRad(lon2 - lon1);
+                    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+                    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
                   };
-
-                  // Determine relationships to display based on active tab
-                  let filteredRels = rels;
-                  if (activeRelGroup !== 'all') {
-                    filteredRels = groups[activeRelGroup]?.relations || [];
-                  }
-
+                  const nearby = intelEntities.filter(e => haversine(lat, lon, e.latitude, e.longitude) <= knowledgeRadius);
+                  if (nearby.length === 0) return null;
+                  const SEVERITY_STYLE = {
+                    HIGH: 'bg-rose-500/10 text-rose-300 border-rose-500/20',
+                    MEDIUM: 'bg-amber-500/10 text-amber-300 border-amber-500/20',
+                    LOW: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                  };
                   return (
-                    <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                    <div className="rounded-2xl border border-cyan-500/20 bg-slate-900/40 p-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">
-                          SEMANTIC RELATIONSHIP EXPLORER
+                        <span className="text-[9px] uppercase tracking-wider text-cyan-400 font-bold block">
+                          🧠 AI INTEL ALERTS ({nearby.length} NEARBY)
                         </span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950/60 border border-white/5 text-slate-400 font-mono font-bold">
-                          {rels.length} Total
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-950/60 border border-white/5 text-slate-400 font-mono">
+                          {(knowledgeRadius/1000).toFixed(1)} km radius
                         </span>
                       </div>
-
-                      {/* Filter pills */}
-                      {rels.length > 0 && (
-                        <div className="flex gap-1 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent pointer-events-auto">
-                          {[
-                            { id: 'all', label: 'All', icon: '🌐' },
-                            { id: 'healthEducation', label: 'Health & Ed', icon: '🏥' },
-                            { id: 'environmentWater', label: 'Eco & Water', icon: '🌲' },
-                            { id: 'transportation', label: 'Transit', icon: '🛤️' },
-                            { id: 'settlementsIndustry', label: 'Settlements', icon: '🏘️' },
-                            { id: 'other', label: 'Other', icon: '📍' }
-                          ].map(tab => {
-                            const count = counts[tab.id];
-                            const isActive = activeRelGroup === tab.id;
-                            if (count === 0 && !isActive) return null; // hide empty categories unless active
-
-                            return (
-                              <button
-                                key={tab.id}
-                                type="button"
-                                onClick={() => setActiveRelGroup(tab.id)}
-                                className={`text-[9px] font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1.5 transition-all duration-200 shrink-0 pointer-events-auto ${
-                                  isActive
-                                    ? 'bg-cyan-500/10 border-cyan-400 text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.25)]'
-                                    : 'bg-slate-950/40 border-white/5 text-slate-400 hover:text-slate-200 hover:border-white/10'
-                                }`}
-                              >
-                                <span>{tab.icon}</span>
-                                <span>{tab.label}</span>
-                                <span className="font-mono text-[8px] opacity-60">({count})</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Relationships list */}
-                      {rels.length > 0 ? (
-                        filteredRels.length > 0 ? (
-                          <div className="space-y-2 max-h-[25vh] overflow-y-auto custom-scrollbar pr-1">
-                            {filteredRels.map((rel, idx) => {
-                              const targetNode = entities.find(e => e.id === rel.target);
-                              if (!targetNode) return null;
-                              
-                              // Custom styling based on target node type
-                              let typeColor = 'text-cyan-400 bg-cyan-400/10 border-cyan-500/25';
-                              let typeIcon = (
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                </svg>
-                              );
-
-                              const tType = targetNode.type?.toLowerCase() || '';
-                              const labelLower = targetNode.label?.toLowerCase() || '';
-
-                              if (tType === 'school' || labelLower.includes('school') || labelLower.includes('college') || labelLower.includes('university')) {
-                                typeColor = 'text-indigo-400 bg-indigo-400/10 border-indigo-500/25 hover:border-indigo-400/40';
-                                typeIcon = (
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                  </svg>
-                                );
-                              } else if (tType === 'hospital' || labelLower.includes('hospital') || labelLower.includes('clinic') || labelLower.includes('medical')) {
-                                typeColor = 'text-rose-400 bg-rose-400/10 border-rose-500/25 hover:border-rose-400/40';
-                                typeIcon = (
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                                  </svg>
-                                );
-                              } else if (tType === 'gym' || labelLower.includes('gym') || labelLower.includes('fitness')) {
-                                typeColor = 'text-amber-400 bg-amber-400/10 border-amber-500/25 hover:border-amber-400/40';
-                                typeIcon = (
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h1.5A2.5 2.5 0 0020 9.5V8a2 2 0 00-2-2h-3.5A2.5 2.5 0 0112 3.5V2" />
-                                  </svg>
-                                );
-                              } else if (tType === 'river' || tType === 'waterbody' || labelLower.includes('river') || labelLower.includes('lake') || labelLower.includes('pond')) {
-                                typeColor = 'text-blue-400 bg-blue-400/10 border-blue-500/25 hover:border-blue-400/40';
-                                typeIcon = (
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                                  </svg>
-                                );
-                              } else if (tType === 'road' || labelLower.includes('road') || labelLower.includes('highway') || labelLower.includes('street')) {
-                                typeColor = 'text-emerald-400 bg-emerald-400/10 border-emerald-500/25 hover:border-emerald-400/40';
-                                typeIcon = (
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                                  </svg>
-                                );
-                              } else if (tType === 'forest' || labelLower.includes('forest') || labelLower.includes('garden') || labelLower.includes('wood') || labelLower.includes('park')) {
-                                typeColor = 'text-teal-400 bg-teal-400/10 border-teal-500/25 hover:border-teal-400/40';
-                                typeIcon = (
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                                  </svg>
-                                );
+                      <div className="space-y-2 max-h-[25vh] overflow-y-auto custom-scrollbar pr-1">
+                        {nearby.map((entity) => (
+                          <div
+                            key={entity.id}
+                            onClick={() => {
+                              setSelectedIntelEntity(entity);
+                              if (mapRef.current) {
+                                mapRef.current.getView().animate({ center: fromLonLat([entity.longitude, entity.latitude]), zoom: 16, duration: 500 });
                               }
-
-                              const relName = RELATION_TYPE_LABELS[rel.relation] || rel.relation;
-
-                              return (
-                                <div
-                                  key={idx}
-                                  onClick={() => {
-                                    flyToFeature(targetNode);
-                                    setActiveRelationshipTarget(targetNode);
-                                  }}
-                                  className="group relative flex items-center justify-between p-3 rounded-xl border border-white/5 bg-slate-950/40 hover:bg-slate-950/70 hover:border-cyan-500/30 cursor-pointer transition-all duration-300 pointer-events-auto overflow-hidden"
-                                >
-                                  {/* Hover overlay glow */}
-                                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
-
-                                  <div className="flex-1 min-w-0 pr-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[11px] font-bold text-slate-100 truncate group-hover:text-cyan-300 transition-colors">
-                                        {targetNode.label}
-                                      </span>
-                                      <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-900 border border-white/5 text-slate-400 font-mono font-bold shrink-0">
-                                        {targetNode.type || 'Entity'}
-                                      </span>
-                                    </div>
-
-                                    {/* Relationship diagram line */}
-                                    <div className="flex items-center gap-2 mt-2 text-slate-500">
-                                      <span className="text-[9px] font-semibold text-slate-400 shrink-0">Site</span>
-                                      
-                                      <div className="flex-1 relative flex items-center h-4">
-                                        <svg className="w-full h-full absolute inset-0 overflow-visible" preserveAspectRatio="none">
-                                          <line 
-                                            x1="0%" y1="50%" x2="100%" y2="50%" 
-                                            stroke="currentColor" 
-                                            strokeWidth="1" 
-                                            strokeDasharray="4,4" 
-                                            className="text-slate-700 group-hover:text-cyan-500/40 transition-colors"
-                                          />
-                                        </svg>
-                                        <span className="absolute left-1/2 -translate-x-1/2 text-[7px] uppercase font-black px-1.5 py-0.2 rounded border border-white/5 bg-slate-900 text-slate-400 group-hover:text-cyan-300 group-hover:border-cyan-500/20 shadow-sm font-sans tracking-wide transition-all z-10 whitespace-nowrap">
-                                          {relName}
-                                        </span>
-                                      </div>
-
-                                      <span className="text-[9px] font-semibold text-slate-400 shrink-0 truncate max-w-[80px]">
-                                        {targetNode.label}
-                                      </span>
-                                    </div>
-                                  </div>
-
-                                  <div className={`p-2 rounded-lg border transition-all duration-300 shrink-0 shadow-inner ${typeColor}`}>
-                                    {typeIcon}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                            }}
+                            className="group flex items-start gap-3 p-3 rounded-xl border border-white/5 bg-slate-950/40 hover:bg-slate-950/70 hover:border-cyan-500/30 cursor-pointer transition-all duration-200 pointer-events-auto"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className={`text-[7px] uppercase font-bold px-1.5 py-0.5 rounded border ${SEVERITY_STYLE[entity.extractedData.severity] || SEVERITY_STYLE.LOW}`}>
+                                  {entity.extractedData.severity}
+                                </span>
+                                <span className="text-[8px] text-slate-400 font-mono uppercase">{entity.extractedData.entityType}</span>
+                              </div>
+                              <p className="text-[11px] font-semibold text-slate-100 truncate group-hover:text-cyan-300 transition-colors">{entity.extractedData.title}</p>
+                              <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2">{entity.extractedData.summary}</p>
+                            </div>
                           </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-white/5 rounded-xl bg-slate-950/20">
-                            <svg className="w-6 h-6 text-slate-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                            </svg>
-                            <p className="text-[10px] text-slate-500 italic">No connections in this category.</p>
-                          </div>
-                        )
-                      ) : (
-                        <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-white/5 rounded-xl bg-slate-950/20">
-                          <svg className="w-6 h-6 text-slate-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4h2M12 9v4" />
-                          </svg>
-                          <p className="text-[10px] text-slate-500 italic">No semantic relationships discovered.</p>
-                        </div>
-                      )}
+                        ))}
+                      </div>
                     </div>
                   );
-                  } catch (err) { console.error('KG relationships error:', err); return null; }
                 })()}
+                {/* KG relationships removed per user request */}
 
               </div>
               </DecisionPanelErrorBoundary>
