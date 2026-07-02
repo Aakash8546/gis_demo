@@ -61,7 +61,7 @@ public class HeritageLayerProvider implements GisLayerProvider {
                 "  node(around:1000, %f, %f)[\"place\"=\"ghat\"];\n" +
                 "  node(around:1000, %f, %f)[\"tourism\"=\"ghat\"];\n" +
                 ");\n" +
-                "out tags;", 
+                "out center tags;", 
                 lat, lon, 
                 lat, lon, 
                 lat, lon, 
@@ -91,6 +91,18 @@ public class HeritageLayerProvider implements GisLayerProvider {
                 if (!name.isEmpty() && !name.equals("Unnamed")) {
                     Map<String, String> site = new HashMap<>();
                     site.put("name", name);
+                    
+                    double siteLat = lat;
+                    double siteLon = lon;
+                    if (elem.has("lat") && elem.has("lon")) {
+                        siteLat = elem.path("lat").asDouble();
+                        siteLon = elem.path("lon").asDouble();
+                    } else if (elem.has("center")) {
+                        siteLat = elem.path("center").path("lat").asDouble();
+                        siteLon = elem.path("center").path("lon").asDouble();
+                    }
+                    site.put("lat", String.valueOf(siteLat));
+                    site.put("lon", String.valueOf(siteLon));
                     
                     String type = "Heritage Site";
                     if (tags.has("historic")) {
@@ -155,7 +167,7 @@ public class HeritageLayerProvider implements GisLayerProvider {
                 "  node(poly: \"%s\")[\"place\"=\"ghat\"];\n" +
                 "  node(poly: \"%s\")[\"tourism\"=\"ghat\"];\n" +
                 ");\n" +
-                "out tags;", polyStr, polyStr, polyStr, polyStr, polyStr, polyStr, polyStr, polyStr);
+                "out center tags;", polyStr, polyStr, polyStr, polyStr, polyStr, polyStr, polyStr, polyStr);
 
         String jsonResponse = executeOverpassQuery(query);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -175,6 +187,18 @@ public class HeritageLayerProvider implements GisLayerProvider {
                 if (!name.isEmpty() && !name.equals("Unnamed")) {
                     Map<String, String> site = new HashMap<>();
                     site.put("name", name);
+                    
+                    double siteLat = 0.0;
+                    double siteLon = 0.0;
+                    if (elem.has("lat") && elem.has("lon")) {
+                        siteLat = elem.path("lat").asDouble();
+                        siteLon = elem.path("lon").asDouble();
+                    } else if (elem.has("center")) {
+                        siteLat = elem.path("center").path("lat").asDouble();
+                        siteLon = elem.path("center").path("lon").asDouble();
+                    }
+                    site.put("lat", String.valueOf(siteLat));
+                    site.put("lon", String.valueOf(siteLon));
                     
                     String type = "Heritage Site";
                     if (tags.has("historic")) {

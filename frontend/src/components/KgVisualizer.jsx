@@ -1058,6 +1058,119 @@ export default function KgVisualizer({ context, onClose, mapRef }) {
               </div>
             );
           })()}
+
+          {/* Default Land Plot Composition sliding panel (if no node is selected) */}
+          {!selectedNode && (() => {
+            const lulcData = context.summary?.multiLayerData?.["local-postgis"]?.lulcBreakdown || [];
+            const totalArea = context.summary?.multiLayerData?.["local-postgis"]?.totalAreaSqMeters || 0;
+            
+            if (totalArea === 0 && lulcData.length === 0) return null;
+            
+            // Convert area to different units
+            const areaHectares = totalArea / 10000;
+            const areaAcres = totalArea / 4046.86;
+            const areaBighas = totalArea / 2529.28; // UP Pucca Bigha standard
+
+            // Colors for LULC classes
+            const LULC_COLORS = {
+              Farmland: 'bg-emerald-500',
+              BuiltUp: 'bg-slate-500',
+              Waterbody: 'bg-blue-500',
+              Forest: 'bg-teal-600',
+              Fallow: 'bg-amber-600',
+              Wasteland: 'bg-rose-500',
+              Agriculture: 'bg-emerald-500',
+              Urban: 'bg-slate-500',
+              Water: 'bg-blue-500'
+            };
+
+            const getLulcColor = (name) => {
+              return LULC_COLORS[name] || LULC_COLORS[name.replace(/\s+/g, '')] || 'bg-cyan-500';
+            };
+
+            return (
+              <div 
+                className="absolute top-6 right-6 bottom-6 w-80 bg-[#0b1728]/95 border border-white/10 rounded-[24px] p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-4 overflow-y-auto z-20 transition-all duration-300 pointer-events-auto"
+                onWheel={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onMouseMove={(e) => e.stopPropagation()}
+                onMouseUp={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                  <div>
+                    <span className="inline-block text-[8px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border mb-2 bg-cyan-500/10 text-cyan-300 border-cyan-500/20">
+                      PLOT BOUNDARY ANALYSIS
+                    </span>
+                    <h3 className="text-sm font-bold text-white leading-snug">
+                      Land Area & Classification
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Spatial Measurements (Area conversion) */}
+                <div className="space-y-2.5">
+                  <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold block">Total Plot Area</span>
+                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                    <div className="p-2 rounded-xl border border-white/5 bg-slate-900/40">
+                      <span className="text-slate-400 block text-[8px] uppercase">Square Meters</span>
+                      <span className="font-mono text-cyan-300 font-bold text-xs">{totalArea.toLocaleString(undefined, {maximumFractionDigits: 1})} m²</span>
+                    </div>
+                    <div className="p-2 rounded-xl border border-white/5 bg-slate-900/40">
+                      <span className="text-slate-400 block text-[8px] uppercase">Hectares</span>
+                      <span className="font-mono text-slate-200 font-bold text-xs">{areaHectares.toFixed(3)} ha</span>
+                    </div>
+                    <div className="p-2 rounded-xl border border-white/5 bg-slate-900/40">
+                      <span className="text-slate-400 block text-[8px] uppercase">Acres</span>
+                      <span className="font-mono text-slate-200 font-bold text-xs">{areaAcres.toFixed(2)} acres</span>
+                    </div>
+                    <div className="p-2 rounded-xl border border-white/5 bg-slate-900/40">
+                      <span className="text-slate-400 block text-[8px] uppercase">Bigha (UP standard)</span>
+                      <span className="font-mono text-emerald-300 font-bold text-xs">{areaBighas.toFixed(2)} bigha</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Plot Composition (LULC Breakdown) */}
+                <div className="space-y-3 flex-1">
+                  <span className="text-[9px] uppercase tracking-widest text-slate-500 font-bold block">Land Composition</span>
+                  <div className="space-y-2.5">
+                    {lulcData.map((item, idx) => {
+                      const colorClass = getLulcColor(item.className);
+                      return (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="font-bold text-slate-300 flex items-center gap-1.5">
+                              <span className={`inline-block w-2 h-2 rounded-sm ${colorClass}`}></span>
+                              {item.className === 'BuiltUp' ? 'Built-up (Basti/Concrete)' : item.className === 'Farmland' ? 'Farmland (Kheti/Agriculture)' : item.className}
+                            </span>
+                            <span className="font-mono text-slate-200">{item.percentage.toFixed(1)}%</span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-slate-950/80 overflow-hidden border border-white/5 p-[1px]">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-500 ${colorClass}`}
+                              style={{ width: `${item.percentage}%` }}
+                            />
+                          </div>
+                          <span className="text-[8px] text-slate-500 block text-right font-mono">
+                            Area: {item.areaSqMeters.toLocaleString(undefined, {maximumFractionDigits: 0})} m²
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Informative Tip */}
+                <div className="p-3.5 rounded-2xl border border-cyan-500/10 bg-cyan-500/5 text-[9px] text-cyan-300 leading-normal flex gap-2">
+                  <span className="text-xs">💡</span>
+                  <span>
+                    This analysis is computed mathematically using PostGIS spatial intersection. Click any node in the graph to view its relative semantic details.
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
