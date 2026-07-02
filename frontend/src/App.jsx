@@ -2827,7 +2827,7 @@ out center;`;
               className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-[11px] font-semibold transition-all ${basemap === 'satellite' ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/20' : 'text-slate-400 hover:text-slate-200'}`}
             >
               <Layers3 className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Sat</span>
+              <span className="hidden sm:inline">Satellite</span>
             </button>
             <button
               onClick={() => setBasemap('varanasi_mbtiles')}
@@ -2835,7 +2835,7 @@ out center;`;
               className={`flex items-center gap-1.5 rounded-[14px] px-3 py-1.5 text-[11px] font-semibold transition-all ${basemap === 'varanasi_mbtiles' ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/20' : 'text-slate-400 hover:text-slate-200'}`}
             >
               <MapIcon className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">MBTiles</span>
+              <span className="hidden sm:inline">Offline Map</span>
             </button>
           </div>
 
@@ -2878,7 +2878,7 @@ out center;`;
             }`}
           >
             <Layers3 className="h-4 w-4" />
-            <span>Layers</span>
+            <span>Map Layers</span>
           </button>
           <button
             type="button"
@@ -2895,7 +2895,7 @@ out center;`;
             }`}
           >
             <Sparkles className="h-4 w-4" />
-            <span>Analysis</span>
+            <span>Area Analysis</span>
           </button>
           <button
             type="button"
@@ -2911,7 +2911,7 @@ out center;`;
             }`}
           >
             <Activity className="h-4 w-4" />
-            <span>Decision Support</span>
+            <span>Location Audit</span>
           </button>
           <button
             type="button"
@@ -2928,7 +2928,7 @@ out center;`;
             }`}
           >
             <Brain className="h-4 w-4" />
-            <span>AI Intel</span>
+            <span>AI Reports</span>
           </button>
         </div>
 
@@ -2939,7 +2939,7 @@ out center;`;
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
                   <Layers3 className="h-4 w-4 text-cyan-400" />
-                  Layer Explorer
+                  Custom Map Layers
                 </h2>
                 <button
                   onClick={openLayerDialog}
@@ -2947,14 +2947,14 @@ out center;`;
                   className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-400/10 border border-cyan-400/20 hover:bg-cyan-400/20 px-3 py-1.5 text-xs font-semibold text-cyan-300 transition-all hover:shadow-[0_0_12px_rgba(34,211,238,0.2)]"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  Create Layer
+                  Add Custom Layer
                 </button>
               </div>
 
               <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-1 custom-scrollbar">
                 {layers.length === 0 ? (
                   <p className="text-xs text-slate-400 leading-relaxed italic text-center py-4 bg-white/5 border border-white/5 rounded-2xl">
-                    No custom layers created. Click "Create Layer" to start manually adding markers.
+                    No custom layers yet. Click "Add Custom Layer" to start placing markers.
                   </p>
                 ) : (
                   layers.map((layer) => (
@@ -2994,7 +2994,7 @@ out center;`;
                               }`}
                             >
                               <Plus className="h-3.5 w-3.5" />
-                              {markerModeEnabled ? 'Adding Markers...' : 'Add Marker'}
+                              {markerModeEnabled ? 'Placing Markers...' : 'Place Markers'}
                             </button>
                           )}
                         </div>
@@ -3113,13 +3113,13 @@ out center;`;
             <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
               <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
                 <Ruler className="h-4 w-4 text-cyan-400" />
-                Marker Distance
+                Measure Distance
               </h2>
 
               <div className="space-y-3">
                 {selectedMarkersForDistance.length === 0 ? (
                   <p className="text-xs text-slate-400 leading-relaxed italic text-center py-2">
-                    Select any two markers across layers to measure geodesic distance.
+                    Select any two markers on the map to measure the distance between them.
                   </p>
                 ) : (
                   <div className="space-y-2.5">
@@ -3151,7 +3151,7 @@ out center;`;
                           </div>
 
                           <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3 text-center shadow-lg">
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-300 font-semibold">Geodesic Distance</p>
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-300 font-semibold">Direct Distance</p>
                             <p className="mt-1 text-xl font-bold text-white tracking-wide">
                               {markerDistance}
                             </p>
@@ -3159,7 +3159,7 @@ out center;`;
                         </>
                       ) : (
                         <div className="text-[11px] text-amber-300/90 italic bg-amber-400/5 border border-amber-400/10 rounded-xl p-2.5 text-center animate-pulse">
-                          Select a second marker on the map...
+                          Select another marker on the map to measure...
                         </div>
                       )}
                     </div>
@@ -3169,7 +3169,7 @@ out center;`;
                       onClick={() => setSelectedMarkersForDistance([])}
                       className="w-full rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 px-3 py-2 text-xs font-semibold text-slate-200 transition-colors"
                     >
-                      Clear Distance Selection
+                      Clear Measurement
                     </button>
                   </div>
                 )}
@@ -3183,7 +3183,7 @@ out center;`;
           <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
             <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
               <PencilLine className="h-4 w-4 text-cyan-400" />
-              Selected Area
+              Draw & Analyze
             </h2>
 
             {selectedAreaAnalysis ? (
@@ -3198,12 +3198,12 @@ out center;`;
                   {polygonKnowledgeLoading ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Generating Area Graph...</span>
+                      <span>Creating Info Graph...</span>
                     </>
                   ) : (
                     <>
                       <Brain className="h-4 w-4" />
-                      <span>Visualize Area Knowledge Graph</span>
+                      <span>Visualize Area Info Graph</span>
                     </>
                   )}
                 </button>
@@ -3220,7 +3220,7 @@ out center;`;
                     }`}
                   >
                     <Globe className="h-3.5 w-3.5" />
-                    <span>LULC</span>
+                    <span>Land Cover</span>
                   </button>
                   <button
                     type="button"
@@ -3232,7 +3232,7 @@ out center;`;
                     }`}
                   >
                     <Sparkles className="h-3.5 w-3.5" />
-                    <span>Insights</span>
+                    <span>Nearby Info</span>
                   </button>
                 </div>
 
@@ -3241,17 +3241,17 @@ out center;`;
                     <div className="grid grid-cols-2 gap-2">
                       {areaMetrics?.map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2">
-                          <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">{label}</p>
+                          <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">{label === 'Layers Inside' ? 'Data Layers' : label}</p>
                           <p className="mt-0.5 text-xs font-bold text-white leading-tight truncate">{value}</p>
                         </div>
                       ))}
                     </div>
 
                     <div className="rounded-xl border border-white/5 bg-slate-900/50 px-3.5 py-2 text-xs text-slate-300">
-                      <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Features Inside</p>
+                      <p className="text-[9px] uppercase tracking-[0.15em] text-slate-400">Objects Inside</p>
                       <div className="mt-2 space-y-2 max-h-[12vh] overflow-y-auto pr-1 custom-scrollbar">
                         {selectedAreaAnalysis.featuresInside.length === 0 ? (
-                          <p className="text-[11px] text-slate-400 italic text-center py-1">No features found inside area.</p>
+                          <p className="text-[11px] text-slate-400 italic text-center py-1">No objects found inside this area.</p>
                         ) : (
                           selectedAreaAnalysis.featuresInside.slice(0, 10).map((item, index) => (
                             <div key={`${item.layerId}-${item.name}-${index}`} className="rounded-lg bg-white/5 px-2.5 py-1.5 border border-white/5">
@@ -3316,7 +3316,7 @@ out center;`;
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                           <Globe className="h-3.5 w-3.5 text-emerald-400" />
-                          LULC Layer
+                          Land Cover Map
                         </h3>
                         {lulcData && Object.keys(lulcClassColorMap).length > 0 && (
                           <div className="flex items-center gap-1.5">
@@ -3329,7 +3329,7 @@ out center;`;
                                 lulcLayerRef.current.setVisible(next);
                               }}
                               className="rounded-lg border border-white/10 bg-white/5 p-1 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
-                              title={lulcLayerVisible ? 'Hide LULC Layer' : 'Show LULC Layer'}
+                              title={lulcLayerVisible ? 'Hide Land Cover' : 'Show Land Cover'}
                             >
                               {lulcLayerVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                             </button>
@@ -3343,7 +3343,7 @@ out center;`;
                                 }
                               }}
                               className="rounded-lg border border-white/10 bg-white/5 p-1 text-slate-300 hover:text-white hover:bg-white/10 transition-all"
-                              title="Zoom to LULC Extent"
+                              title="Zoom to Land Cover Extent"
                             >
                               <LocateFixed className="h-3 w-3" />
                             </button>
@@ -3383,7 +3383,7 @@ out center;`;
                             className="h-2.5 w-2.5 rounded-sm flex-shrink-0"
                             style={{ backgroundColor: lulcClassColorMap[lulcHoveredClass] || '#94a3b8' }}
                           />
-                          Hovering: {lulcHoveredClass}
+                          Pointing at: {lulcHoveredClass}
                         </div>
                       )}
 
@@ -3417,7 +3417,7 @@ out center;`;
                       {lulcLoading ? (
                         <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-xs">
                           <Loader2 className="h-6 w-6 animate-spin text-emerald-400 mb-2" />
-                          <span>Analyzing land cover...</span>
+                          <span>Checking land types...</span>
                         </div>
                       ) : lulcError ? (
                         <div className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-xl p-3 text-center">
@@ -3425,7 +3425,7 @@ out center;`;
                         </div>
                       ) : lulcData ? (
                         <div className="space-y-2">
-                          {lulcData.classes && lulcData.classes.length > 0 ? (
+                           {lulcData.classes && lulcData.classes.length > 0 ? (
                             lulcData.classes.map((cls) => {
                               // === Fully dynamic — no hardcoded class names ===
                               const hexColor = lulcClassColorMap[cls.className] || '#94a3b8';
@@ -3456,7 +3456,7 @@ out center;`;
                               );
                             })
                           ) : (
-                            <p className="text-[11px] text-slate-400 italic text-center py-1">LULC data not available</p>
+                            <p className="text-[11px] text-slate-400 italic text-center py-1">Land type details not available</p>
                           )}
 
                           {/* Auto-generated Legend */}
@@ -3478,7 +3478,7 @@ out center;`;
                           )}
                         </div>
                       ) : (
-                        <p className="text-[11px] text-slate-400 italic text-center py-2">No LULC data available.</p>
+                        <p className="text-[11px] text-slate-400 italic text-center py-2">No land type details available.</p>
                       )}
                     </div>
                   </>
@@ -3488,13 +3488,13 @@ out center;`;
                     <div className="border-t border-white/10 pt-3">
                       <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
                         <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
-                        Amenities Nearby
+                        Nearby Facilities
                       </h3>
                       
                       {liveAmenitiesLoading ? (
                         <div className="flex flex-col items-center justify-center py-6 text-slate-400 text-xs">
                           <Loader2 className="h-6 w-6 animate-spin text-cyan-400 mb-2" />
-                          <span>Discovering amenities...</span>
+                          <span>Searching facilities...</span>
                         </div>
                       ) : liveAmenitiesError ? (
                         <div className="text-[11px] text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-xl p-3 text-center">
@@ -3533,7 +3533,7 @@ out center;`;
                           })}
                         </div>
                       ) : (
-                        <p className="text-[11px] text-slate-400 italic text-center py-2">No live data loaded.</p>
+                        <p className="text-[11px] text-slate-400 italic text-center py-2">No facilities details found.</p>
                       )}
                     </div>
 
@@ -3578,7 +3578,7 @@ out center;`;
               </div>
             ) : (
               <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3 text-xs text-slate-400 italic leading-relaxed text-center">
-                Draw a polygon on the map using "Draw" mode to inspect features in a custom area.
+                Draw an outline on the map using "Draw" mode to inspect land types and local details inside a custom area.
               </div>
             )}
           </div>
@@ -3589,11 +3589,11 @@ out center;`;
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
                 <Activity className="h-4 w-4 text-cyan-400" />
-                Decision Support
+                Site Suitability Audit
               </h2>
               {knowledgeContext && (
                 <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                  Active Area
+                  Audit Site
                 </span>
               )}
             </div>
@@ -3601,7 +3601,7 @@ out center;`;
             {knowledgeLoading ? (
               <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-xs">
                 <Loader2 className="h-8 w-8 animate-spin text-cyan-400 mb-3" />
-                <span>Analyzing spatial relationships...</span>
+                <span>Gathering site insights...</span>
               </div>
             ) : knowledgeError ? (
               <div className="text-xs text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-2xl p-4 text-center space-y-2">
@@ -3616,7 +3616,7 @@ out center;`;
                 </div>
                 <p className="font-semibold text-slate-300">No Location Selected</p>
                 <p className="text-[11px] text-slate-400">
-                  Click anywhere on the map to run location suitability audit and query decision support details.
+                  Click anywhere on the map to inspect suitability for farming, solar power, air quality, construction, and safety.
                 </p>
               </div>
             ) : (
@@ -3626,7 +3626,7 @@ out center;`;
                 {/* 1. Audit Search Radius */}
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">AUDIT RANGE SETTINGS</span>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">SEARCH COVERAGE SETTINGS</span>
                     <button
                       type="button"
                       onClick={() => setShowBuffer(prev => !prev)}
@@ -3636,13 +3636,13 @@ out center;`;
                           : 'bg-slate-800/40 text-slate-500 border-slate-700/30'
                       }`}
                     >
-                      {showBuffer ? 'BUFFER VISIBLE' : 'BUFFER HIDDEN'}
+                      {showBuffer ? 'SHOW COVERAGE AREA' : 'HIDE COVERAGE AREA'}
                     </button>
                   </div>
                   
                   <div className="space-y-1 pt-1">
                     <div className="flex justify-between text-xs font-semibold text-slate-300">
-                      <span className="text-slate-200 font-sans font-medium">Search Radius</span>
+                      <span className="text-slate-200 font-sans font-medium">Search Range</span>
                       <span className="text-cyan-400 font-mono font-bold">{(knowledgeRadius / 1000).toFixed(1)} km</span>
                     </div>
                     <input
@@ -4132,7 +4132,7 @@ out center;`;
                 {/* 5. Summary Statistics */}
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
                   <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">
-                    SUMMARY STATISTICS ({(knowledgeRadius / 1000).toFixed(1)} KM RADIUS)
+                    SITE STATISTICS ({(knowledgeRadius / 1000).toFixed(1)} KM RADIUS)
                   </span>
                   
                   <div className="grid grid-cols-2 gap-2">
@@ -4200,7 +4200,7 @@ out center;`;
 
                 {/* 6. Nearest Infrastructure */}
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
-                  <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">NEAREST INFRASTRUCTURE</span>
+                  <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">NEAREST UTILITIES & SERVICES</span>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs p-2.5 rounded-xl border border-white/5 bg-slate-950/40">
                       <span className="text-slate-400 font-semibold">Nearest Road</span>
@@ -4812,7 +4812,7 @@ out center;`;
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
                 <Brain className="h-4 w-4 text-cyan-400" />
-                AI Location Intel
+                AI Incident Reports
               </h2>
               {intelEntities.length > 0 && (
                 <button
@@ -4829,15 +4829,15 @@ out center;`;
               <div className="flex justify-center">
                 <Brain className="h-8 w-8 text-cyan-400/50 animate-pulse" />
               </div>
-              <p className="font-semibold text-slate-300">AI Entity Extraction</p>
+              <p className="font-semibold text-slate-300">Mark Incidents with AI</p>
               <p className="text-[11px] text-slate-400">
-                Click anywhere on the map to capture coordinates, describe local events, news, or incidents, and let Gemini extract structured spatial entities.
+                Click anywhere on the map to select a point, write about a local event or incident, and let AI automatically identify and log it on the map.
               </p>
             </div>
 
             {intelEntities.length > 0 && (
               <div className="space-y-2">
-                <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">EXTRACTED ENTITIES ({intelEntities.length})</span>
+                <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">ACTIVE INCIDENTS ({intelEntities.length})</span>
                 <div className="space-y-2 max-h-[35vh] overflow-y-auto pr-1 custom-scrollbar">
                   {intelEntities.map((entity) => {
                     const isSelected = selectedIntelEntity?.id === entity.id;
@@ -4898,7 +4898,7 @@ out center;`;
               ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
-          title="Navigation Mode"
+          title="Move & Pan Map"
         >
           <Navigation className="h-4 w-4" />
         </button>
@@ -4913,14 +4913,14 @@ out center;`;
               setActiveLayerId(layers[0].id);
             }
             setMarkerModeEnabled(true);
-            showStatus('Click the map to add a marker to the active layer.');
+            showStatus('Click the map to place a marker on the active layer.');
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
             markerModeEnabled
               ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
-          title="Add Marker"
+          title="Place Markers"
         >
           <MapPin className="h-4 w-4" />
         </button>
@@ -4932,7 +4932,7 @@ out center;`;
             setElevationQueryMode(false);
             setDecisionSupportModeEnabled(false);
             setDrawMode('Polygon');
-            showStatus('Click the map to draw a polygon area.');
+            showStatus('Click the map to draw an area outline.');
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
             drawMode === 'Polygon'
@@ -4951,14 +4951,14 @@ out center;`;
             setDrawMode('None');
             setDecisionSupportModeEnabled(false);
             setElevationQueryMode(true);
-            showStatus('Elevation Query mode: click any point on the map to query DEM elevation & slope.');
+            showStatus('Height & Slope mode: click any point on the map to query height & slope.');
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
             elevationQueryMode
               ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
-          title="Elevation Query"
+          title="Check Height & Slope"
         >
           <LocateFixed className="h-4 w-4" />
         </button>
@@ -4972,9 +4972,9 @@ out center;`;
             const nextState = !decisionSupportModeEnabled;
             setDecisionSupportModeEnabled(nextState);
             if (nextState) {
-              showStatus('Decision Support Active. Click anywhere on the map to audit location and query KG.');
+              showStatus('Site Suitability Audit Active. Click anywhere on the map to audit location.');
             } else {
-              showStatus('Decision Support Inactive. Navigation mode active.');
+              showStatus('Site Suitability Audit Inactive. Navigation mode active.');
             }
           }}
           className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${
@@ -4982,7 +4982,7 @@ out center;`;
               ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
               : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
           }`}
-          title="Decision Support Mode"
+          title="Audit Site Suitability"
         >
           <Brain className="h-4 w-4" />
         </button>
