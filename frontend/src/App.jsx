@@ -772,6 +772,11 @@ function App() {
   const intelSourceRef = useRef(new VectorSource());
   const intelLayerRef = useRef(null);
   const intelModeRef = useRef(false);
+  const intelEntitiesRef = useRef([]);
+
+  useEffect(() => {
+    intelEntitiesRef.current = intelEntities;
+  }, [intelEntities]);
 
   const selectedAreaPolygon = useMemo(() => {
     return drawSourceRef.current
@@ -2182,6 +2187,31 @@ out center;`;
 
       if (markerModeRef.current) {
         openFeatureDialogRef.current(coordinates);
+        return;
+      }
+
+      // Check if we hit an AI location intelligence marker
+      let hitIntel = null;
+      map.forEachFeatureAtPixel(event.pixel, (feature, layer) => {
+        if (!hitIntel && layer === intelLayerRef.current) hitIntel = feature;
+      });
+      if (hitIntel) {
+        const entityId = hitIntel.get('entityId');
+        const entity = intelEntitiesRef.current.find(e => e.id === entityId);
+        if (entity) {
+          setSelectedIntelEntity(entity);
+          return;
+        }
+      }
+
+      if (intelModeRef.current) {
+        setIntelDraft({
+          latitude: coordinates[1],
+          longitude: coordinates[0],
+          text: ''
+        });
+        setIntelError('');
+        setIntelDialogOpen(true);
         return;
       }
 
