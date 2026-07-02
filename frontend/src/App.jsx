@@ -1500,7 +1500,7 @@ out center;`;
       if (hasNearbyFloodAlert) {
         recs.push({
           type: 'danger',
-          text: `🚨 High Flood Risk (AI Alert): Active flood/water-logging report nearby: "${floodAlerts[0].extractedData.title}".`,
+          text: `🚨 High Flood Risk (Alert): Active flood/water-logging report nearby: "${floodAlerts[0].extractedData.title}".`,
           category: 'WaterBody'
         });
       } else {
@@ -1532,7 +1532,7 @@ out center;`;
       score -= isHigh ? 15 : 8;
       recs.push({
         type: isHigh ? 'danger' : 'warning',
-        text: `⚡ Utility / Safety Alert (AI Alert): "${utilityAlerts[0].extractedData.title}". ${utilityAlerts[0].extractedData.summary}`,
+        text: `⚡ Utility / Safety Alert (Alert): "${utilityAlerts[0].extractedData.title}". ${utilityAlerts[0].extractedData.summary}`,
         category: 'Hospital'
       });
     }
@@ -1548,7 +1548,7 @@ out center;`;
       score -= isHigh ? 20 : 10;
       recs.push({
         type: isHigh ? 'danger' : 'warning',
-        text: `🚧 Road / Logistics Alert (AI Alert): "${damageAlerts[0].extractedData.title}". ${damageAlerts[0].extractedData.summary}`,
+        text: `🚧 Road / Logistics Alert (Alert): "${damageAlerts[0].extractedData.title}". ${damageAlerts[0].extractedData.summary}`,
         category: 'Road'
       });
     }
@@ -4114,7 +4114,7 @@ out center;`;
                     const color = alert.extractedData.severity === 'HIGH' ? "border-rose-500/20 bg-rose-500/5" : "border-amber-500/20 bg-amber-500/5";
                     return {
                       icon,
-                      title: `AI Alert: ${alert.extractedData.title} (${alert.extractedData.entityType})`,
+                      title: `Alert: ${alert.extractedData.title} (${alert.extractedData.entityType})`,
                       advice: `Active local report: ${alert.extractedData.summary}. Severity: ${alert.extractedData.severity}.`,
                       color,
                       id: `utility-alert-${idx}`
