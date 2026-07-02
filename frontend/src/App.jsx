@@ -780,21 +780,7 @@ function App() {
     intelEntitiesRef.current = intelEntities;
   }, [intelEntities]);
 
-  // Fetch intel entities on mount (so they always show on map regardless of active tab)
-  useEffect(() => {
-    const fetchEntities = async () => {
-      try {
-        const response = await fetch('/api/entities');
-        if (response.ok) {
-          const data = await response.json();
-          setIntelEntities(data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch AI entities on mount:', error);
-      }
-    };
-    fetchEntities();
-  }, []);
+
 
   const selectedAreaPolygon = useMemo(() => {
     return drawSourceRef.current
@@ -865,21 +851,6 @@ function App() {
   useEffect(() => {
     intelModeRef.current = (activeSidebarTab === 'intel');
 
-    // Refresh intel entities whenever we switch to the intel tab
-    if (activeSidebarTab === 'intel') {
-      const fetchEntities = async () => {
-        try {
-          const response = await fetch('/api/entities');
-          if (response.ok) {
-            const data = await response.json();
-            setIntelEntities(data);
-          }
-        } catch (error) {
-          console.error('Failed to fetch AI entities:', error);
-        }
-      };
-      fetchEntities();
-    }
 
     // Only clear decision-support overlays when the tab we are LEAVING is 'decision'
     const prevTab = prevSidebarTabRef.current;
@@ -906,26 +877,7 @@ function App() {
     prevSidebarTabRef.current = activeSidebarTab;
   }, [activeSidebarTab]);
 
-  useEffect(() => {
-    // Whenever Bhuvan layers toggle, clear decision support overlays to avoid visual clutter
-    setSelectedCoordinates(null);
-    setSelectedStatsCategory(null);
-    setFocusedHeritage(null);
-    setKnowledgeContext(null);
-    
-    if (selectedPointSourceRef.current) selectedPointSourceRef.current.clear();
-    if (decisionSupportPinsSourceRef.current) decisionSupportPinsSourceRef.current.clear();
-    if (focusedHeritageSourceRef.current) focusedHeritageSourceRef.current.clear();
-    if (highlightSourceRef.current) highlightSourceRef.current.clear();
-    if (clickedRelationshipTargetSourceRef.current) clickedRelationshipTargetSourceRef.current.clear();
-    if (drawSourceRef.current) {
-      drawSourceRef.current.clear();
-      setDrawRevision(prev => prev + 1);
-    }
-    
-    setShowKgVisualizer(false);
-    setPolygonKnowledgeContext(null);
-  }, [bhuvanLulcActive, bhuvanGeomorphActive, bhuvanWastelandActive]);
+
 
   useEffect(() => {
     if (!decisionSupportModeEnabled) {
@@ -2733,38 +2685,16 @@ out center;`;
     }
   };
 
-  const deleteIntelEntity = async (id) => {
-    try {
-      const response = await fetch(`/api/entities/${id}`, {
-        method: 'DELETE'
-      });
-      if (response.ok) {
-        setIntelEntities(current => current.filter(e => e.id !== id));
-        setSelectedIntelEntity(null);
-        showStatus('Entity deleted.');
-      } else {
-        const errorData = await response.json();
-        showStatus(errorData.message || 'Failed to delete entity.');
-      }
-    } catch (err) {
-      console.error(err);
-      showStatus('Error deleting entity.');
-    }
+  const deleteIntelEntity = (id) => {
+    setIntelEntities(current => current.filter(e => e.id !== id));
+    setSelectedIntelEntity(null);
+    showStatus('Entity deleted.');
   };
 
-  const clearIntelSession = async () => {
-    try {
-      const response = await fetch('/api/entities', {
-        method: 'DELETE'
-      });
-      if (response.ok) {
-        setIntelEntities([]);
-        setSelectedIntelEntity(null);
-        showStatus('All entities cleared.');
-      }
-    } catch (err) {
-      console.error(err);
-    }
+  const clearIntelSession = () => {
+    setIntelEntities([]);
+    setSelectedIntelEntity(null);
+    showStatus('All entities cleared.');
   };
 
 
