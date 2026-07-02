@@ -2960,6 +2960,23 @@ out center;`;
             <Activity className="h-4 w-4" />
             <span>Decision Support</span>
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSidebarTab('intel');
+              setMarkerModeEnabled(false);
+              setDrawMode('None');
+              showStatus('Click anywhere on the map to add an AI Location Entity.');
+            }}
+            className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              activeSidebarTab === 'intel'
+                ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <Brain className="h-4 w-4" />
+            <span>AI Intel</span>
+          </button>
         </div>
 
         {activeSidebarTab === 'layers' && (
@@ -4910,6 +4927,80 @@ out center;`;
 
               </div>
               </DecisionPanelErrorBoundary>
+            )}
+          </div>
+        )}
+
+        {activeSidebarTab === 'intel' && (
+          <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-4 pointer-events-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+                <Brain className="h-4 w-4 text-cyan-400" />
+                AI Location Intel
+              </h2>
+              {intelEntities.length > 0 && (
+                <button
+                  onClick={clearIntelSession}
+                  className="text-[10px] text-rose-400 hover:text-rose-300 flex items-center gap-1.5 font-bold transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Clear All</span>
+                </button>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-dashed border-white/10 bg-slate-900/20 p-6 text-xs text-slate-400 italic leading-relaxed text-center space-y-3">
+              <div className="flex justify-center">
+                <Brain className="h-8 w-8 text-cyan-400/50 animate-pulse" />
+              </div>
+              <p className="font-semibold text-slate-300">AI Entity Extraction</p>
+              <p className="text-[11px] text-slate-400">
+                Click anywhere on the map to capture coordinates, describe local events, news, or incidents, and let Gemini extract structured spatial entities.
+              </p>
+            </div>
+
+            {intelEntities.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">EXTRACTED ENTITIES ({intelEntities.length})</span>
+                <div className="space-y-2 max-h-[35vh] overflow-y-auto pr-1 custom-scrollbar">
+                  {intelEntities.map((entity) => {
+                    const isSelected = selectedIntelEntity?.id === entity.id;
+                    return (
+                      <div
+                        key={entity.id}
+                        onClick={() => {
+                          setSelectedIntelEntity(entity);
+                          if (mapRef.current) {
+                            const coords = fromLonLat([entity.longitude, entity.latitude]);
+                            mapRef.current.getView().animate({ center: coords, zoom: 16, duration: 600 });
+                          }
+                        }}
+                        className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-cyan-500/10 border-cyan-400/40 shadow-md text-white'
+                            : 'bg-slate-900/40 border-white/5 hover:border-white/10 hover:bg-slate-900/60 text-slate-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="text-xs font-bold truncate">{entity.extractedData.title}</span>
+                          <span className={`text-[8px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded shrink-0 ${
+                            entity.extractedData.severity === 'HIGH' ? 'bg-rose-500/20 text-rose-300' :
+                            entity.extractedData.severity === 'MEDIUM' ? 'bg-amber-500/20 text-amber-300' :
+                            'bg-emerald-500/20 text-emerald-300'
+                          }`}>
+                            {entity.extractedData.severity}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">{entity.extractedData.summary}</p>
+                        <div className="flex justify-between items-center text-[8px] text-slate-500 mt-2 font-mono">
+                          <span>{entity.extractedData.entityType}</span>
+                          <span>{new Date(entity.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
           </div>
         )}
