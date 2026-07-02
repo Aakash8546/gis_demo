@@ -5230,6 +5230,70 @@ out center;`;
         </div>
       )}
 
+      {/* Floating Intel Entity Details Panel */}
+      {selectedIntelEntity && (
+        <div className="fixed bottom-6 left-6 md:left-[410px] z-30 w-[340px] pointer-events-auto rounded-[24px] border border-cyan-500/30 bg-slate-950/90 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <span className={`text-[8px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border ${
+                selectedIntelEntity.extractedData.severity === 'HIGH' ? 'bg-rose-500/10 text-rose-300 border-rose-500/20' :
+                selectedIntelEntity.extractedData.severity === 'MEDIUM' ? 'bg-amber-500/10 text-amber-300 border-amber-500/20' :
+                'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+              }`}>
+                {selectedIntelEntity.extractedData.severity} Severity
+              </span>
+              <h3 className="mt-2 text-sm font-bold text-white leading-snug">
+                {selectedIntelEntity.extractedData.title}
+              </h3>
+              <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                Type: {selectedIntelEntity.extractedData.entityType}
+              </p>
+            </div>
+            <button
+              onClick={() => setSelectedIntelEntity(null)}
+              className="rounded-lg border border-white/10 bg-white/5 p-1 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+
+          <div className="space-y-2 text-xs">
+            <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+              <span className="text-[9px] uppercase tracking-[0.1em] text-slate-500 block mb-1">Summary</span>
+              <p className="text-slate-200">{selectedIntelEntity.extractedData.summary}</p>
+            </div>
+
+            <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
+              <span className="text-[9px] uppercase tracking-[0.1em] text-slate-500 block mb-1">Original Text</span>
+              <p className="text-slate-400 italic">"{selectedIntelEntity.originalText}"</p>
+            </div>
+
+            {selectedIntelEntity.extractedData.keywords && selectedIntelEntity.extractedData.keywords.length > 0 && (
+              <div className="flex flex-wrap gap-1 pt-1">
+                {selectedIntelEntity.extractedData.keywords.map((kw, i) => (
+                  <span key={i} className="text-[8px] uppercase bg-white/5 px-2 py-0.5 rounded border border-white/5 text-slate-400">
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-between items-center text-[9px] text-slate-500 pt-1">
+              <span>Coords: {selectedIntelEntity.latitude.toFixed(5)}° N, {selectedIntelEntity.longitude.toFixed(5)}° E</span>
+              <span>{new Date(selectedIntelEntity.createdAt).toLocaleString()}</span>
+            </div>
+            
+            <button
+              onClick={() => deleteIntelEntity(selectedIntelEntity.id)}
+              className="w-full mt-2 py-2 bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/20 hover:border-rose-500/40 rounded-xl text-rose-400 hover:text-rose-200 font-bold transition-all flex items-center justify-center gap-1.5"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Delete Entity</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Programmatic Tooltip Overlays (OpenLayers) */}
       <div className="hidden">
         <div
