@@ -615,6 +615,7 @@ function App() {
   const dataLayerRefs = useRef({});
   const selectedPointSourceRef = useRef(new VectorSource());
   const highlightSourceRef = useRef(new VectorSource());
+  const focusedHeritageSourceRef = useRef(new VectorSource());
   const decisionSupportPinsSourceRef = useRef(new VectorSource());
   const decisionSupportPinsLayerRef = useRef(null);
   const clickedRelationshipTargetSourceRef = useRef(new VectorSource());
@@ -742,6 +743,11 @@ function App() {
   const [selectedAmenityCategory, setSelectedAmenityCategory] = useState(null);
   const [highlightedLiveAmenity, setHighlightedLiveAmenity] = useState(null);
   const [amenitySearchQuery, setAmenitySearchQuery] = useState('');
+  const [showHeritageList, setShowHeritageList] = useState(false);
+  const [focusedHeritage, setFocusedHeritage] = useState(null);
+  const [bhuvanLulcActive, setBhuvanLulcActive] = useState(false);
+  const [bhuvanGeomorphActive, setBhuvanGeomorphActive] = useState(false);
+  const [bhuvanWastelandActive, setBhuvanWastelandActive] = useState(false);
 
   const [activeSidebarTab, setActiveSidebarTab] = useState('layers'); // 'layers', 'analysis', 'decision'
   const [activeAnalysisSubTab, setActiveAnalysisSubTab] = useState('lulc'); // 'lulc', 'insights'
@@ -754,6 +760,18 @@ function App() {
   const [polygonKnowledgeContext, setPolygonKnowledgeContext] = useState(null);
   const [polygonKnowledgeLoading, setPolygonKnowledgeLoading] = useState(false);
   const [polygonKnowledgeError, setPolygonKnowledgeError] = useState(null);
+
+  // Location Intelligence State
+  const [intelDialogOpen, setIntelDialogOpen] = useState(false);
+  const [intelDraft, setIntelDraft] = useState({ latitude: null, longitude: null, text: '' });
+  const [intelLoading, setIntelLoading] = useState(false);
+  const [intelError, setIntelError] = useState('');
+  const [intelEntities, setIntelEntities] = useState([]);
+  const [selectedIntelEntity, setSelectedIntelEntity] = useState(null);
+
+  const intelSourceRef = useRef(new VectorSource());
+  const intelLayerRef = useRef(null);
+  const intelModeRef = useRef(false);
 
   const selectedAreaPolygon = useMemo(() => {
     return drawSourceRef.current
@@ -819,6 +837,46 @@ function App() {
       }
     }
   }, [selectedCoordinates, knowledgeRadius, showBuffer, activeSidebarTab]);
+
+  // Clear all Decision Support and custom drawings when switching tabs or toggling WMS layers
+  useEffect(() => {
+    if (activeSidebarTab !== 'decision') {
+      setSelectedCoordinates(null);
+      setSelectedStatsCategory(null);
+      setFocusedHeritage(null);
+      
+      if (selectedPointSourceRef.current) selectedPointSourceRef.current.clear();
+      if (decisionSupportPinsSourceRef.current) decisionSupportPinsSourceRef.current.clear();
+      if (focusedHeritageSourceRef.current) focusedHeritageSourceRef.current.clear();
+      if (highlightSourceRef.current) highlightSourceRef.current.clear();
+      if (drawSourceRef.current) {
+        drawSourceRef.current.clear();
+        setDrawRevision(prev => prev + 1);
+      }
+      
+      setShowKgVisualizer(false);
+      setPolygonKnowledgeContext(null);
+    }
+  }, [activeSidebarTab]);
+
+  useEffect(() => {
+    // Whenever Bhuvan layers toggle, clear decision support overlays to avoid visual clutter
+    setSelectedCoordinates(null);
+    setSelectedStatsCategory(null);
+    setFocusedHeritage(null);
+    
+    if (selectedPointSourceRef.current) selectedPointSourceRef.current.clear();
+    if (decisionSupportPinsSourceRef.current) decisionSupportPinsSourceRef.current.clear();
+    if (focusedHeritageSourceRef.current) focusedHeritageSourceRef.current.clear();
+    if (highlightSourceRef.current) highlightSourceRef.current.clear();
+    if (drawSourceRef.current) {
+      drawSourceRef.current.clear();
+      setDrawRevision(prev => prev + 1);
+    }
+    
+    setShowKgVisualizer(false);
+    setPolygonKnowledgeContext(null);
+  }, [bhuvanLulcActive, bhuvanGeomorphActive, bhuvanWastelandActive]);
 
   // Synchronize dynamic Decision Support pins on the map
   useEffect(() => {
@@ -1171,9 +1229,6 @@ out center;`;
     }
   }, []);
 
-  const [bhuvanLulcActive, setBhuvanLulcActive] = useState(false);
-  const [bhuvanGeomorphActive, setBhuvanGeomorphActive] = useState(false);
-  const [bhuvanWastelandActive, setBhuvanWastelandActive] = useState(false);
   const activeBhuvanLayersRef = useRef({});
 
   const toggleBhuvanWmsLayer = useCallback((layerKey, wmsLayerName) => {
@@ -1256,6 +1311,31 @@ out center;`;
       setPolygonKnowledgeLoading(false);
     }
   }, [selectedAreaCoords, showStatus]);
+
+  const handleFocusHeritage = useCallback((site) => {
+    if (!site.lat || !site.lon || !mapRef.current) return;
+    const lon = parseFloat(site.lon);
+    const lat = parseFloat(site.lat);
+    const coords = fromLonLat([lon, lat]);
+    
+    setFocusedHeritage(site);
+    
+    if (focusedHeritageSourceRef.current) {
+      focusedHeritageSourceRef.current.clear();
+      focusedHeritageSourceRef.current.addFeature(
+        new Feature({
+          geometry: new Point(coords),
+          name: site.name
+        })
+      );
+    }
+    
+    mapRef.current.getView().animate({
+      center: coords,
+      zoom: 17,
+      duration: 800
+    });
+  }, []);
 
   const highlightRelationshipTarget = useCallback((targetNode, hoverState) => {
     if (!highlightSourceRef.current) return;
@@ -1778,6 +1858,14 @@ out center;`;
     selectedPointLayer.set('kind', 'overlay');
     selectedPointLayerRef.current = selectedPointLayer;
 
+    const focusedHeritageLayer = new VectorLayer({
+      source: focusedHeritageSourceRef.current,
+      style: (feature) => {
+        return pointMarkerStyle('#06b6d4');
+      }
+    });
+    focusedHeritageLayer.set('kind', 'overlay');
+
     const decisionSupportPinsLayer = new VectorLayer({
       source: decisionSupportPinsSourceRef.current,
       style: (feature) => {
@@ -1888,6 +1976,7 @@ out center;`;
           drawLayer,
           decisionSupportPinsLayer,
           clickedRelationshipTargetLayer,
+          focusedHeritageLayer,
           lulcLayerRef.current  // LULC renders on top so colors are visible
         ],
         overlays: [tooltipOverlay, hoverTooltipOverlay],
@@ -4339,12 +4428,17 @@ out center;`;
                               </span>
                             </div>
 
-                            <div className="space-y-1 border-t border-white/5 pt-1.5">
-                              <div className="flex justify-between">
+                             <div className="space-y-1 border-t border-white/5 pt-1.5">
+                              <div className="flex justify-between items-center">
                                 <span className="font-medium text-slate-300">24. Historic Monuments & Ghats:</span>
-                                <span className="text-cyan-400 font-bold font-mono">
-                                  {mData["heritage-sites"]?.heritageCount || 0} sites found
-                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowHeritageList(!showHeritageList)}
+                                  className="text-cyan-400 hover:text-cyan-300 hover:underline font-bold font-mono text-right outline-none flex items-center gap-1"
+                                >
+                                  <span>{mData["heritage-sites"]?.heritageCount || 0} sites</span>
+                                  <span className="text-[8px]">{showHeritageList ? '▼' : '▶'}</span>
+                                </button>
                               </div>
                               <span className="text-[10px] text-slate-500 block leading-normal">
                                 {(() => {
@@ -4354,6 +4448,26 @@ out center;`;
                                   return `Nearby attractions: ${names}. This high cultural density is great for tourism development.`;
                                 })()}
                               </span>
+                              {showHeritageList && (mData["heritage-sites"]?.sites || []).length > 0 && (
+                                <div className="mt-2 p-2 rounded-xl border border-white/5 bg-slate-950/60 text-[10px] space-y-1 max-h-32 overflow-y-auto custom-scrollbar select-none">
+                                  {(mData["heritage-sites"]?.sites || []).map((site, idx) => (
+                                    <div
+                                      key={idx}
+                                      onClick={() => handleFocusHeritage(site)}
+                                      className={`flex justify-between items-center p-1.5 rounded cursor-pointer transition-all ${
+                                        focusedHeritage?.name === site.name
+                                          ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/30'
+                                          : 'hover:bg-white/5 text-slate-400 hover:text-slate-200'
+                                      }`}
+                                    >
+                                      <span className="font-medium truncate max-w-[170px]">{site.name}</span>
+                                      <span className="text-[8px] uppercase tracking-wider text-slate-500 font-mono shrink-0">
+                                        {site.type || 'Attraction'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -5007,7 +5121,7 @@ out center;`;
             <div className="flex items-center justify-between border-b border-white/5 pb-2">
               <span className="text-[10px] uppercase tracking-wider font-bold text-cyan-400 flex items-center gap-1.5">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-                MAP LEGEND (शेड कार्ड)
+                MAP LEGEND
               </span>
             </div>
             
