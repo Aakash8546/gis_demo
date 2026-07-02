@@ -28,9 +28,9 @@ public class BhuvanWmsLayerProvider implements GisLayerProvider {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("status", "success");
         result.put("wmsBaseUrl", "https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms");
-        result.put("lulcLayerName", "multitemporal_lulc_50k");
-        result.put("geomorphologyLayerName", "geomorphology_50k");
-        result.put("wastelandLayerName", "wasteland_50k");
+        result.put("lulcLayerName", "lulc:UP_LULC50K_1516");
+        result.put("geomorphologyLayerName", "geomorphology:UP_GM50K_0506");
+        result.put("wastelandLayerName", "wasteland:UP_WL50K_0809");
         result.put("coordinateFormat", "EPSG:4326");
         result.put("providerAuthority", "National Remote Sensing Centre (NRSC), ISRO");
         return result;

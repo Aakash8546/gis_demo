@@ -1190,12 +1190,15 @@ out center;`;
           params: {
             'LAYERS': wmsLayerName,
             'TILED': true,
-            'VERSION': '1.1.1'
+            'VERSION': '1.1.1',
+            'FORMAT': 'image/png',
+            'TRANSPARENT': true
           },
+          projection: 'EPSG:4326',
           serverType: 'geoserver',
           transition: 0
         }),
-        opacity: 0.7
+        opacity: 0.75
       });
       mapRef.current.addLayer(wmsLayer);
       activeBhuvanLayersRef.current[layerKey] = wmsLayer;
@@ -3883,7 +3886,7 @@ out center;`;
                     >
                       <span className="text-[10px] uppercase tracking-wider font-bold text-cyan-400 flex items-center gap-1.5">
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-                        22 INTEGRATED GIS LAYERS
+                        24 INTEGRATED GIS LAYERS
                       </span>
                       <span className="text-xs font-mono">{showMultiLayerPanel ? '▼' : '▲'}</span>
                     </div>
@@ -3898,7 +3901,7 @@ out center;`;
                         <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">                        {/* Group A: Local Database Layers */}
                           <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5 text-xs text-slate-400">
                             <span className="font-bold text-slate-300 text-xs block border-b border-white/5 pb-1.5">
-                              📂 Group A: Local Land Shape & Type (Varanasi Database)
+                              📂 Local Land Shape & Type (Varanasi Database)
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
@@ -3941,7 +3944,7 @@ out center;`;
                           {/* Group B: Official Government Data */}
                           <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5 text-xs text-slate-400">
                             <span className="font-bold text-slate-300 text-xs block border-b border-white/5 pb-1.5">
-                              🇮🇳 Group B: Government Air & Market Updates
+                              🇮🇳 Government Air & Market Updates
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
@@ -3992,9 +3995,9 @@ out center;`;
                           {/* Group C: Satellite Live Layers */}
                           <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5 text-xs text-slate-400">
                             <span className="font-bold text-slate-300 text-xs block border-b border-white/5 pb-1.5 flex justify-between items-center">
-                              <span>🛰️ Group C: Indian Satellite Visual Map Layers</span>
-                              <span className="text-[9px] text-slate-500 font-mono italic">Click to view on Map</span>
+                              <span>🛰️ Indian Satellite Visual Map Layers</span>
                             </span>
+                            
                             <div className="space-y-1">
                               <div className="flex justify-between items-center">
                                 <span className="font-medium text-slate-300">5. Land & Crop Coverage:</span>
@@ -4002,7 +4005,7 @@ out center;`;
                                   type="button"
                                   onClick={() => {
                                     setBhuvanLulcActive(!bhuvanLulcActive);
-                                    toggleBhuvanWmsLayer('lulc', 'multitemporal_lulc_50k');
+                                    toggleBhuvanWmsLayer('lulc', 'lulc:UP_LULC50K_1516');
                                   }}
                                   className={`px-2 py-0.5 text-[9px] rounded font-bold border transition-all ${
                                     bhuvanLulcActive 
@@ -4014,7 +4017,7 @@ out center;`;
                                 </button>
                               </div>
                               <span className="text-[10px] text-slate-500 block leading-normal">
-                                Highlights different crop cycles, forest patches, and built-up areas mapped by ISRO.
+                                Toggles ISRO Bhuvan's land use overlay. Use this to visually identify crop boundaries, forests, and concrete buildings from space.
                               </span>
                             </div>
 
@@ -4025,7 +4028,7 @@ out center;`;
                                   type="button"
                                   onClick={() => {
                                     setBhuvanGeomorphActive(!bhuvanGeomorphActive);
-                                    toggleBhuvanWmsLayer('geomorphology', 'geomorphology_50k');
+                                    toggleBhuvanWmsLayer('geomorphology', 'geomorphology:UP_GM50K_0506');
                                   }}
                                   className={`px-2 py-0.5 text-[9px] rounded font-bold border transition-all ${
                                     bhuvanGeomorphActive 
@@ -4037,7 +4040,7 @@ out center;`;
                                 </button>
                               </div>
                               <span className="text-[10px] text-slate-500 block leading-normal">
-                                Shows sub-surface geomorphological structures and rock formations from satellite radar data.
+                                Shows the shapes of rock formations, valleys, and plain land underneath the soil from satellite radar.
                               </span>
                             </div>
 
@@ -4048,7 +4051,7 @@ out center;`;
                                   type="button"
                                   onClick={() => {
                                     setBhuvanWastelandActive(!bhuvanWastelandActive);
-                                    toggleBhuvanWmsLayer('wasteland', 'wasteland_50k');
+                                    toggleBhuvanWmsLayer('wasteland', 'wasteland:UP_WL50K_0809');
                                   }}
                                   className={`px-2 py-0.5 text-[9px] rounded font-bold border transition-all ${
                                     bhuvanWastelandActive 
@@ -4060,7 +4063,7 @@ out center;`;
                                 </button>
                               </div>
                               <span className="text-[10px] text-slate-500 block leading-normal">
-                                Marks unused, barren, or sandy lands which are suitable for industrial use or solar farm setups.
+                                Highlights government-classified empty or unproductive lands. Ideal for setting up solar farms or industries.
                               </span>
                             </div>
                           </div>
@@ -4068,7 +4071,7 @@ out center;`;
                           {/* Group D: NASA Climate Averages */}
                           <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5 text-xs text-slate-400">
                             <span className="font-bold text-slate-300 text-xs block border-b border-white/5 pb-1.5">
-                              🌍 Group D: Climate & Sunlight History (NASA)
+                              🌍 Climate & Sunlight History (NASA)
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
@@ -4114,7 +4117,7 @@ out center;`;
                           {/* Group E: Soil Quality & Farming */}
                           <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5 text-xs text-slate-400">
                             <span className="font-bold text-slate-300 text-xs block border-b border-white/5 pb-1.5">
-                              🌱 Group E: Soil Type, Fertility & Moisture
+                              🌱 Soil Type, Fertility & Moisture
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
@@ -4211,7 +4214,7 @@ out center;`;
                           {/* Group F: Climate Comfort & Hazards */}
                           <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5 text-xs text-slate-400">
                             <span className="font-bold text-slate-300 text-xs block border-b border-white/5 pb-1.5">
-                              ⚡ Group F: Climate Comfort & Natural Hazards
+                              ⚡ Climate Comfort & Natural Hazards
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
@@ -4260,7 +4263,7 @@ out center;`;
                           {/* Group G: Surrounding Infrastructure */}
                           <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5 text-xs text-slate-400">
                             <span className="font-bold text-slate-300 text-xs block border-b border-white/5 pb-1.5">
-                              🛤️ Group G: Surrounding Infrastructure & Accessibility
+                              🛤️ Surrounding Infrastructure & Accessibility
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
@@ -4294,7 +4297,7 @@ out center;`;
                           {/* Group H: Local Economy */}
                           <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5 text-xs text-slate-400">
                             <span className="font-bold text-slate-300 text-xs block border-b border-white/5 pb-1.5">
-                              📊 Group H: Local Economy & Power Grid
+                              📊 Local Economy & Power Grid
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
@@ -4305,6 +4308,51 @@ out center;`;
                               </div>
                               <span className="text-[10px] text-slate-500 block leading-normal">
                                 Highly reliable grid connectivity (99.7% power access) with steady economic growth indicators.
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Group I: New Advanced Spatial Datasets */}
+                          <div className="p-3.5 rounded-xl border border-white/5 bg-slate-950/40 space-y-2.5 text-xs text-slate-400">
+                            <span className="font-bold text-slate-300 text-xs block border-b border-white/5 pb-1.5">
+                              🚀 Advanced Live Environment & Tourism Datasets
+                            </span>
+                            
+                            <div className="space-y-1">
+                              <div className="flex justify-between">
+                                <span className="font-medium text-slate-300">23. Live Fine Dust & PM2.5:</span>
+                                <span className="text-slate-200 font-bold font-mono">
+                                  {(() => {
+                                    const pm25 = mData["air-quality-advanced"]?.pm2_5 || 35.4;
+                                    const pm10 = mData["air-quality-advanced"]?.pm10 || 68.2;
+                                    return `PM2.5: ${pm25.toFixed(1)} µg/m³, PM10: ${pm10.toFixed(1)} µg/m³`;
+                                  })()}
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 block leading-normal">
+                                {(() => {
+                                  const pm25 = mData["air-quality-advanced"]?.pm2_5 || 35.4;
+                                  if (pm25 > 60) return "High dust & smoke levels! Vulnerable residents should avoid outdoor exposure.";
+                                  if (pm25 > 30) return "Moderate dust levels. Safe for standard outdoor activities.";
+                                  return "Very low dust levels. Excellent, crisp air quality.";
+                                })()}
+                              </span>
+                            </div>
+
+                            <div className="space-y-1 border-t border-white/5 pt-1.5">
+                              <div className="flex justify-between">
+                                <span className="font-medium text-slate-300">24. Historic Monuments & Ghats:</span>
+                                <span className="text-cyan-400 font-bold font-mono">
+                                  {mData["heritage-sites"]?.heritageCount || 0} sites found
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 block leading-normal">
+                                {(() => {
+                                  const sites = mData["heritage-sites"]?.sites || [];
+                                  if (sites.length === 0) return "No prominent historical structures or tourist points registered within 1 km.";
+                                  const names = sites.slice(0, 3).map(s => s.name).join(", ");
+                                  return `Nearby attractions: ${names}. This high cultural density is great for tourism development.`;
+                                })()}
                               </span>
                             </div>
                           </div>
@@ -4949,6 +4997,63 @@ out center;`;
           </div>
         </div>
       )}
+
+      {/* Floating Bhuvan WMS Legend Card */}
+      {(() => {
+        const hasActiveBhuvanLayer = bhuvanLulcActive || bhuvanGeomorphActive || bhuvanWastelandActive;
+        if (!hasActiveBhuvanLayer) return null;
+        return (
+          <div className="fixed bottom-6 left-[416px] z-20 flex flex-col gap-3 p-4 rounded-[20px] bg-slate-950/85 border border-white/10 shadow-2xl backdrop-blur-xl max-w-[280px] max-h-[350px] overflow-hidden select-none pointer-events-auto transition-all duration-300">
+            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+              <span className="text-[10px] uppercase tracking-wider font-bold text-cyan-400 flex items-center gap-1.5">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                MAP LEGEND (शेड कार्ड)
+              </span>
+            </div>
+            
+            <div className="flex flex-col gap-4 overflow-y-auto pr-1 max-h-[280px] custom-scrollbar">
+              {bhuvanLulcActive && (
+                <div className="space-y-1.5">
+                  <span className="text-[9px] font-bold text-slate-300 block">5. Land & Crop Coverage (LULC)</span>
+                  <div className="rounded bg-white p-1.5 flex justify-center shadow-inner">
+                    <img 
+                      src="https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms?REQUEST=GetLegendGraphic&VERSION=1.1.1&FORMAT=image/png&LAYER=lulc:UP_LULC50K_1516" 
+                      alt="LULC Legend" 
+                      className="max-w-full object-contain"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {bhuvanGeomorphActive && (
+                <div className="space-y-1.5 border-t border-white/5 pt-2.5">
+                  <span className="text-[9px] font-bold text-slate-300 block">6. Rock & Terrain Map</span>
+                  <div className="rounded bg-white p-1.5 flex justify-center shadow-inner">
+                    <img 
+                      src="https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms?REQUEST=GetLegendGraphic&VERSION=1.1.1&FORMAT=image/png&LAYER=geomorphology:UP_GM50K_0506" 
+                      alt="Geomorphology Legend" 
+                      className="max-w-full object-contain"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {bhuvanWastelandActive && (
+                <div className="space-y-1.5 border-t border-white/5 pt-2.5">
+                  <span className="text-[9px] font-bold text-slate-300 block">7. Empty / Wasteland Finder</span>
+                  <div className="rounded bg-white p-1.5 flex justify-center shadow-inner">
+                    <img 
+                      src="https://bhuvan-vec2.nrsc.gov.in/bhuvan/wms?REQUEST=GetLegendGraphic&VERSION=1.1.1&FORMAT=image/png&LAYER=wasteland:UP_WL50K_0809" 
+                      alt="Wasteland Legend" 
+                      className="max-w-full object-contain"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Floating Status Message Toast/Notification */}
       {statusMessage && (

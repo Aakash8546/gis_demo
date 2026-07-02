@@ -25,7 +25,8 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
             "https://overpass-api.de/api/interpreter",
             "https://lz4.overpass-api.de/api/interpreter",
             "https://z.overpass-api.de/api/interpreter",
-            "https://overpass.kumi.systems/api/interpreter"
+            "https://overpass.kumi.systems/api/interpreter",
+            "https://overpass.nchc.org.tw/api/interpreter"
     };
 
     @Override
@@ -199,6 +200,7 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
         String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        headers.setAccept(Collections.singletonList(MediaType.ALL));
         headers.set("User-Agent", "WebGIS-Production-App/1.0 (aakash.sri@example.com)");
         HttpEntity<String> request = new HttpEntity<>(payload, headers);
 
