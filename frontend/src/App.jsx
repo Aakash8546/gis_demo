@@ -4238,7 +4238,7 @@ out center;`;
                     >
                       <span className="text-[10px] uppercase tracking-wider font-bold text-cyan-400 flex items-center gap-1.5">
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
-                        24 INTEGRATED GIS LAYERS
+                        INTEGRATED DATA LAYERS
                       </span>
                       <span className="text-xs font-mono">{showMultiLayerPanel ? '▼' : '▲'}</span>
                     </div>
@@ -4257,7 +4257,7 @@ out center;`;
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">1. Height & Slope:</span>
+                                <span className="font-medium text-slate-300">Height & Slope:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {(() => {
                                     const elevVal = mData["local-postgis"]?.elevationMeters;
@@ -4275,7 +4275,7 @@ out center;`;
                             
                             <div className="space-y-1">
                               <div className="flex justify-between border-t border-white/5 pt-1.5">
-                                <span className="font-medium text-slate-300">2. Current Land Cover:</span>
+                                <span className="font-medium text-slate-300">Current Land Cover:</span>
                                 <span className="text-cyan-400 font-bold">
                                   {(() => {
                                     const landNames = { BuiltUp: "Built-up (Buildings/Concrete)", Forest: "Forest / Trees", Agricultural: "Farmland", WaterBody: "Near Water", Wetland: "Wetland" };
@@ -4300,7 +4300,7 @@ out center;`;
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">3. Live Air Quality (AQI):</span>
+                                <span className="font-medium text-slate-300">Live Air Quality (AQI):</span>
                                 <span className="text-cyan-400 font-bold font-mono">
                                   {(() => {
                                     const baseAqi = mData["data-gov-in-india"]?.cpcbAqi?.aqiValue || 72;
@@ -4330,7 +4330,7 @@ out center;`;
 
                             {mData["data-gov-in-india"]?.marketPrices && (
                               <div className="space-y-1 border-t border-white/5 pt-1.5">
-                                <span className="font-medium text-slate-300">4. Crop Mandi Prices:</span>
+                                <span className="font-medium text-slate-300">Crop Mandi Prices:</span>
                                 {mData["data-gov-in-india"].marketPrices.slice(0, 1).map((item, idx) => (
                                   <div key={idx} className="flex justify-between pl-1.5 text-[11px] mt-0.5">
                                     <span className="text-slate-400">{item.commodity}:</span>
@@ -4352,7 +4352,7 @@ out center;`;
                             
                             <div className="space-y-1">
                               <div className="flex justify-between items-center">
-                                <span className="font-medium text-slate-300">5. Land & Crop Coverage:</span>
+                                <span className="font-medium text-slate-300">Land & Crop Coverage:</span>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -4375,7 +4375,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between items-center">
-                                <span className="font-medium text-slate-300">6. Rock & Terrain Map:</span>
+                                <span className="font-medium text-slate-300">Rock & Terrain Map:</span>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -4398,7 +4398,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between items-center">
-                                <span className="font-medium text-slate-300">7. Empty / Wasteland Finder:</span>
+                                <span className="font-medium text-slate-300">Empty / Wasteland Finder:</span>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -4427,7 +4427,7 @@ out center;`;
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">8. Yearly Average Rain:</span>
+                                <span className="font-medium text-slate-300">Yearly Average Rain:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {mData["nasa-power"]?.annualAverageRainfallMmDay || 3.1} mm per day
                                 </span>
@@ -4439,7 +4439,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">9. Solar Power Strength:</span>
+                                <span className="font-medium text-slate-300">Solar Power Strength:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {(() => {
                                     const baseSolar = mData["nasa-power"]?.averageSolarRadiationKWhrM2Day || 5.25;
@@ -4455,7 +4455,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">10. Wind Speed:</span>
+                                <span className="font-medium text-slate-300">Wind Speed:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {mData["nasa-power"]?.averageWindSpeedMps || 3.4} meters/second
                                 </span>
@@ -4473,7 +4473,7 @@ out center;`;
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">11. Clay content:</span>
+                                <span className="font-medium text-slate-300">Clay content:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {(() => {
                                     const baseClay = mData["soil-and-elevation"]?.soilComposition?.clayPercentage || 32.5;
@@ -4489,7 +4489,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">12. Sand content:</span>
+                                <span className="font-medium text-slate-300">Sand content:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {(() => {
                                     const baseSand = mData["soil-and-elevation"]?.soilComposition?.sandPercentage || 28.0;
@@ -4505,7 +4505,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">13. Silt content:</span>
+                                <span className="font-medium text-slate-300">Silt content:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {(() => {
                                     const baseSilt = mData["soil-and-elevation"]?.soilComposition?.siltPercentage || 39.5;
@@ -4521,7 +4521,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">14. Natural Soil Nutrients:</span>
+                                <span className="font-medium text-slate-300">Natural Soil Nutrients:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {mData["soil-and-elevation"]?.soilComposition?.soilOrganicCarbonGPerKg || 12.4} grams/kg
                                 </span>
@@ -4533,7 +4533,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">15. Live Soil Dampness:</span>
+                                <span className="font-medium text-slate-300">Live Soil Dampness:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {(() => {
                                     const baseM = mData["open-weather"]?.soilMoisturePercent || 24.5;
@@ -4552,7 +4552,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">16. Soil Temperature:</span>
+                                <span className="font-medium text-slate-300">Soil Temperature:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {mData["open-weather"]?.soilTemperatureCelsius || 26.4} °C
                                 </span>
@@ -4570,7 +4570,7 @@ out center;`;
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">17. Temperature & Humidity:</span>
+                                <span className="font-medium text-slate-300">Temperature & Humidity:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {(() => {
                                     const baseT = mData["open-weather"]?.temperatureCelsius || 28.0;
@@ -4589,7 +4589,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">18. Sunburn UV Risk:</span>
+                                <span className="font-medium text-slate-300">Sunburn UV Risk:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {mData["open-weather"]?.uvIndex || 3.2} (Moderate)
                                 </span>
@@ -4601,7 +4601,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">19. Regional Earthquakes:</span>
+                                <span className="font-medium text-slate-300">Regional Earthquakes:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {mData["usgs-seismic"]?.recentEarthquakesCount || 0} events
                                 </span>
@@ -4619,7 +4619,7 @@ out center;`;
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">20. Nearby Roads:</span>
+                                <span className="font-medium text-slate-300">Nearby Roads:</span>
                                 <span className="text-slate-200 font-bold truncate max-w-[160px]" title={knowledgeContext.summary?.nearestRoad}>
                                   {knowledgeContext.summary?.nearestRoad || 'No road in 500m'}
                                 </span>
@@ -4631,7 +4631,7 @@ out center;`;
 
                             <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">21. Family & Safety Amenities:</span>
+                                <span className="font-medium text-slate-300">Family & Safety Amenities:</span>
                                 <span className="text-slate-200 font-bold truncate max-w-[160px]" title={knowledgeContext.summary?.nearestHospital}>
                                   {(() => {
                                     const s = knowledgeContext.summary?.nearestSchool || "None";
@@ -4653,7 +4653,7 @@ out center;`;
                             </span>
                             <div className="space-y-1">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">22. Regional Electricity & GDP:</span>
+                                <span className="font-medium text-slate-300">Regional Electricity & GDP:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   GDP: ${mData["world-bank-socioeconomics"]?.gdpPerCapitaUSD || 2410.9} USD, Elec: {mData["world-bank-socioeconomics"]?.accessToElectricityPercent || 99.7}%
                                 </span>
@@ -4672,7 +4672,7 @@ out center;`;
                             
                             <div className="space-y-1">
                               <div className="flex justify-between">
-                                <span className="font-medium text-slate-300">23. Live Fine Dust & PM2.5:</span>
+                                <span className="font-medium text-slate-300">Live Fine Dust & PM2.5:</span>
                                 <span className="text-slate-200 font-bold font-mono">
                                   {(() => {
                                     const pm25 = mData["air-quality-advanced"]?.pm2_5 || 35.4;
@@ -4693,7 +4693,7 @@ out center;`;
 
                              <div className="space-y-1 border-t border-white/5 pt-1.5">
                               <div className="flex justify-between items-center">
-                                <span className="font-medium text-slate-300">24. Historic Monuments & Ghats:</span>
+                                <span className="font-medium text-slate-300">Historic Monuments & Ghats:</span>
                                 <button
                                   type="button"
                                   onClick={() => setShowHeritageList(!showHeritageList)}
