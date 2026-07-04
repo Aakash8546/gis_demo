@@ -755,9 +755,9 @@ function App() {
   const [knowledgeContext, setKnowledgeContext] = useState(null);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeError, setKnowledgeError] = useState(null);
-  const [siteAssessment, setSiteAssessment] = useState(null);
-  const [siteAssessmentLoading, setSiteAssessmentLoading] = useState(false);
-  const [siteAssessmentError, setSiteAssessmentError] = useState(null);
+  const [spatialFeatures, setSpatialFeatures] = useState(null);
+  const [spatialFeaturesLoading, setSpatialFeaturesLoading] = useState(false);
+  const [spatialFeaturesError, setSpatialFeaturesError] = useState(null);
   const [decisionSubTab, setDecisionSubTab] = useState('general');
   const [knowledgeRadius, setKnowledgeRadius] = useState(2000); // default 2km (in meters)
   const [showBuffer, setShowBuffer] = useState(true);
@@ -1313,8 +1313,8 @@ out center;`;
     const radiusToUse = customRadius !== undefined ? customRadius : knowledgeRadius;
     setKnowledgeLoading(true);
     setKnowledgeError(null);
-    setSiteAssessmentLoading(true);
-    setSiteAssessmentError(null);
+    setSpatialFeaturesLoading(true);
+    setSpatialFeaturesError(null);
     
     try {
       const [knowledgeRes, assessmentRes] = await Promise.all([
@@ -1344,14 +1344,14 @@ out center;`;
       ]);
 
       setKnowledgeContext(knowledgeData);
-      setSiteAssessment(assessmentData);
+      setSpatialFeatures(assessmentData);
     } catch (err) {
       console.error('Error loading context/assessment:', err);
       setKnowledgeError(err.message || 'Failed to connect to GIS Knowledge service.');
-      setSiteAssessmentError(err.message || 'Failed to load site assessment.');
+      setSpatialFeaturesError(err.message || 'Failed to load site assessment.');
     } finally {
       setKnowledgeLoading(false);
-      setSiteAssessmentLoading(false);
+      setSpatialFeaturesLoading(false);
     }
   }, [knowledgeRadius]);
 
@@ -3753,25 +3753,25 @@ out center;`;
                 <Activity className="h-4 w-4 text-cyan-400" />
                 Spatial Feature Vector
               </h2>
-              {siteAssessment && (
+              {spatialFeatures && (
                 <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
                   Feature Store
                 </span>
               )}
             </div>
 
-            {siteAssessmentLoading ? (
+            {spatialFeaturesLoading ? (
               <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-xs">
                 <Loader2 className="h-8 w-8 animate-spin text-cyan-400 mb-3" />
                 <span>Extracting spatial features...</span>
               </div>
-            ) : siteAssessmentError ? (
+            ) : spatialFeaturesError ? (
               <div className="text-xs text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-2xl p-4 text-center space-y-2">
                 <p className="font-semibold">Extraction Failed</p>
-                <p className="text-[11px] text-slate-400">{siteAssessmentError}</p>
+                <p className="text-[11px] text-slate-400">{spatialFeaturesError}</p>
                 <p className="text-[10px] text-slate-500 italic mt-2">Click on the map to query a valid coordinate.</p>
               </div>
-            ) : !siteAssessment ? (
+            ) : !spatialFeatures ? (
               <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/20 p-6 text-xs text-slate-400 italic leading-relaxed text-center space-y-3">
                 <div className="flex justify-center">
                   <MapPin className="h-8 w-8 text-cyan-400/50 animate-bounce" />
@@ -3829,7 +3829,7 @@ out center;`;
 
                 {/* 2. Feature Vector Categories */}
                 <div className="space-y-3">
-                  {Object.entries(siteAssessment.featureVector || {}).map(([category, features]) => (
+                  {Object.entries(spatialFeatures.featureVector || {}).map(([category, features]) => (
                     <div key={category} className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3 pointer-events-auto">
                       <h3 className="text-[10px] uppercase tracking-wider text-cyan-400 font-extrabold flex items-center justify-between">
                         <span className="capitalize">{category.replace('_', ' ')}</span>
@@ -3883,7 +3883,7 @@ out center;`;
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-2 pointer-events-auto">
                   <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">CONTRIBUTING DATA SOURCES</span>
                   <div className="grid grid-cols-2 gap-2">
-                    {(siteAssessment.sources || []).map((src, index) => (
+                    {(spatialFeatures.sources || []).map((src, index) => (
                       <div key={index} className="p-2 rounded bg-slate-950/40 border border-white/5 space-y-0.5">
                         <p className="text-[10px] font-semibold text-white/95 truncate">{src.name}</p>
                         <div className="flex justify-between text-[8px] text-slate-500">
