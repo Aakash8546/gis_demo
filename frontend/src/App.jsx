@@ -825,6 +825,13 @@ function App() {
     other: false
   });
 
+  useEffect(() => {
+    if (selectedAreaCoords && activeSidebarTab === 'decision') {
+      setSelectedCoordinates(null);
+      fetchKnowledgeContext(selectedAreaCoords, true);
+    }
+  }, [selectedAreaCoords, activeSidebarTab, fetchKnowledgeContext]);
+
   // Synchronize selection point marker and query buffer circle on the map
   useEffect(() => {
     if (!selectedPointSourceRef.current) return;
@@ -1307,48 +1314,65 @@ out center;`;
     }
   }, [showStatus]);
 
-  const fetchKnowledgeContext = useCallback(async (lonLat, customRadius) => {
+  const fetchKnowledgeContext = useCallback(async (lonLatOrPolygon, isPolygon = false, customRadius) => {
     setActiveSidebarTab('decision');
     setActiveRelationshipTarget(null);
-    const [lon, lat] = lonLat;
-    const radiusToUse = customRadius !== undefined ? customRadius : knowledgeRadius;
     setKnowledgeLoading(true);
     setKnowledgeError(null);
     setSpatialFeaturesLoading(true);
     setSpatialFeaturesError(null);
     
     try {
-      const [knowledgeRes, assessmentRes] = await Promise.all([
-        fetch(`/api/knowledge/context?lat=${lat}&lon=${lon}&radius=${radiusToUse}`),
+      let knowledgeUrl = '';
+      let featuresBody = {};
+      
+      if (isPolygon) {
+        knowledgeUrl = '/api/knowledge/polygon-context';
+        featuresBody = { polygon: lonLatOrPolygon };
+      } else {
+        const [lon, lat] = lonLatOrPolygon;
+        const radiusToUse = customRadius !== undefined ? customRadius : knowledgeRadius;
+        knowledgeUrl = `/api/knowledge/context?lat=${lat}&lon=${lon}&radius=${radiusToUse}`;
+        featuresBody = {
+          latitude: lat,
+          longitude: lon,
+          radius: radiusToUse
+        };
+      }
+
+      const [knowledgeRes, featuresRes] = await Promise.all([
+        isPolygon 
+          ? fetch(knowledgeUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ coordinates: lonLatOrPolygon })
+            })
+          : fetch(knowledgeUrl),
         fetch('/api/features/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            latitude: lat,
-            longitude: lon,
-            radius: radiusToUse
-          })
+          body: JSON.stringify(featuresBody)
         })
       ]);
 
       if (!knowledgeRes.ok) {
         throw new Error(`Failed to load knowledge context: ${knowledgeRes.status}`);
       }
-      if (!assessmentRes.ok) {
-        throw new Error(`Failed to load site assessment: ${assessmentRes.status}`);
+      if (!featuresRes.ok) {
+        throw new Error(`Failed to load spatial features: ${featuresRes.status}`);
       }
 
-      const [knowledgeData, assessmentData] = await Promise.all([
+      const [knowledgeData, featuresData] = await Promise.all([
         knowledgeRes.json(),
-        assessmentRes.json()
+        featuresRes.json()
       ]);
 
       setKnowledgeContext(knowledgeData);
-      setSpatialFeatures(assessmentData);
+      setSpatialFeatures(featuresData);
     } catch (err) {
-      console.error('Error loading context/assessment:', err);
+      console.error('Error loading context:', err);
       setKnowledgeError(err.message || 'Failed to connect to GIS Knowledge service.');
-      setSpatialFeaturesError(err.message || 'Failed to load site assessment.');
+      setSpatialFeaturesError(err.message || 'Failed to load spatial features.');
     } finally {
       setKnowledgeLoading(false);
       setSpatialFeaturesLoading(false);
@@ -2091,6 +2115,11 @@ out center;`;
       setSelectedCoordinates(coordinates);
       setSelectedStatsCategory(null);
       tooltipOverlay.setPosition(event.coordinate);
+
+      // Clear any drawn polygon since we are doing a point click query
+      if (drawSourceRef.current) {
+        drawSourceRef.current.clear();
+      }
 
       if (drawModeRef.current !== 'None') {
         return;
@@ -3583,10 +3612,22 @@ out center;`;
                 <div className="flex justify-center">
                   <MapPin className="h-8 w-8 text-cyan-400/50 animate-bounce" />
                 </div>
-                <p className="font-semibold text-slate-300">No Location Selected</p>
+                <p className="font-semibold text-slate-300">No Area Selected</p>
                 <p className="text-[11px] text-slate-400">
-                  Click anywhere on the map to see details about transportation, population, terrain, facilities, and climate.
+                  Click on the map or draw a custom area boundaries (Polygon) to analyze transportation, population, facilities, and climate.
                 </p>
+                <div className="flex justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDrawMode('Polygon');
+                      showStatus('Click the map to draw a custom area boundary.');
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-[10px] font-semibold hover:bg-cyan-500/20 transition-all uppercase tracking-wider flex items-center gap-1.5 pointer-events-auto"
+                  >
+                    <span>📐</span> Draw Boundary Area
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4 max-h-[62vh] overflow-y-auto pr-1 custom-scrollbar">

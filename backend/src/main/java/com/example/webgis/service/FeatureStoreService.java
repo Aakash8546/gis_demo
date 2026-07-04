@@ -64,6 +64,65 @@ public class FeatureStoreService {
     }
 
     @SuppressWarnings("unchecked")
+    public Map<String, Object> queryFeaturesPolygon(List<List<Double>> outerRing) {
+        log.info("Generating spatial feature vector for Polygon with {} points", outerRing.size());
+
+        // Construct the multi-dimensional structure required by queryPolygon: List<List<List<Double>>>
+        List<List<List<Double>>> coordinates = new ArrayList<>();
+        coordinates.add(outerRing);
+
+        // 1. Gather all raw GIS Layer responses for Polygon in parallel
+        Map<String, Object> layersData = gisQueryExecutor.queryPolygon(coordinates);
+
+        // 2. Build structured and normalized Feature Vector
+        Map<String, Object> featureVector = new LinkedHashMap<>();
+
+        featureVector.put("transportation", buildTransportationFeatures(layersData));
+        featureVector.put("demographics", buildDemographicsFeatures(layersData));
+        featureVector.put("infrastructure", buildInfrastructureFeatures(layersData));
+        featureVector.put("market", buildMarketFeatures(layersData));
+        featureVector.put("environment", buildEnvironmentFeatures(layersData));
+        featureVector.put("land_use", buildLandUseFeatures(layersData));
+        featureVector.put("weather", buildWeatherFeatures(layersData));
+        featureVector.put("climate", buildClimateFeatures(layersData));
+        featureVector.put("safety", buildSafetyFeatures(layersData));
+
+        // 3. Assemble response with metadata and versioning
+        Map<String, Object> response = new LinkedHashMap<>();
+        
+        // Centroid calculation for metadata
+        double sumLat = 0;
+        double sumLon = 0;
+        int count = 0;
+        for (List<Double> pt : outerRing) {
+            if (pt.size() >= 2) {
+                sumLon += pt.get(0);
+                sumLat += pt.get(1);
+                count++;
+            }
+        }
+        Map<String, Double> coords = new LinkedHashMap<>();
+        coords.put("latitude", count > 0 ? sumLat / count : 0.0);
+        coords.put("longitude", count > 0 ? sumLon / count : 0.0);
+
+        response.put("coordinates", coords);
+        response.put("schemaVersion", "v1.0.0");
+        response.put("timestamp", Instant.now().toString());
+        response.put("featureVector", featureVector);
+
+        // Build summary source metadata block
+        List<Map<String, Object>> dataSources = new ArrayList<>();
+        dataSources.add(Map.of("name", "OpenStreetMap", "coverage", "global", "lastUpdated", "2026-07-04"));
+        dataSources.add(Map.of("name", "Open-Meteo Weather", "coverage", "global", "lastUpdated", "2026-07-04"));
+        dataSources.add(Map.of("name", "USGS Seismic", "coverage", "global", "lastUpdated", "2026-07-04"));
+        dataSources.add(Map.of("name", "NASA POWER", "coverage", "global", "lastUpdated", "2026-01-01"));
+        dataSources.add(Map.of("name", "WorldPop", "coverage", "global", "lastUpdated", "2020-12-31"));
+        response.put("sources", dataSources);
+
+        return response;
+    }
+
+    @SuppressWarnings("unchecked")
     private Map<String, FeatureValue> buildTransportationFeatures(Map<String, Object> layersData) {
         Map<String, FeatureValue> features = new LinkedHashMap<>();
         Map<String, Object> logistics = (Map<String, Object>) layersData.get("logistics-access");

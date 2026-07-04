@@ -4,6 +4,7 @@ import com.example.webgis.service.FeatureStoreService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -19,8 +20,13 @@ public class FeatureQueryController {
 
     @PostMapping("/query")
     public ResponseEntity<Map<String, Object>> getFeatureVector(@RequestBody FeatureQueryRequest request) {
+        if (request.polygon() != null && !request.polygon().isEmpty()) {
+            Map<String, Object> featureVector = featureStoreService.queryFeaturesPolygon(request.polygon());
+            return ResponseEntity.ok(featureVector);
+        }
+
         if (request.latitude() == null || request.longitude() == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "latitude and longitude are required"));
+            return ResponseEntity.badRequest().body(Map.of("error", "latitude and longitude or polygon coordinates are required"));
         }
 
         Map<String, Object> featureVector = featureStoreService.queryFeatures(
@@ -33,4 +39,4 @@ public class FeatureQueryController {
     }
 }
 
-record FeatureQueryRequest(Double latitude, Double longitude, Double radius) {}
+record FeatureQueryRequest(Double latitude, Double longitude, Double radius, List<List<Double>> polygon) {}
