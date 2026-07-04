@@ -8,7 +8,11 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -19,15 +23,21 @@ import java.util.*;
 public class CommercialPoiLayerProvider implements GisLayerProvider {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final HttpClient httpClient;
 
     private static final String[] OVERPASS_MIRRORS = {
-            "https://overpass-api.de/api/interpreter",
-            "https://lz4.overpass-api.de/api/interpreter",
-            "https://z.overpass-api.de/api/interpreter",
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter",
-            "https://overpass.nchc.org.tw/api/interpreter"
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.openstreetmap.ru/api/interpreter"
     };
+
+    public CommercialPoiLayerProvider() {
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(2))
+                .build();
+    }
 
     @Override
     public String getLayerId() {
@@ -51,15 +61,15 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
         String query = String.format(Locale.US,
                 "[out:json][timeout:10];\n" +
                 "(\n" +
-                "  node[\"shop\"](around:2000, %f, %f);\n" +
-                "  node[\"office\"](around:2000, %f, %f);\n" +
-                "  node[\"industrial\"](around:2000, %f, %f);\n" +
-                "  node[\"building\"=\"warehouse\"](around:2000, %f, %f);\n" +
-                "  node[\"amenity\"=\"fuel\"](around:2000, %f, %f);\n" +
-                "  node[\"amenity\"=\"bank\"](around:2000, %f, %f);\n" +
-                "  node[\"amenity\"=\"marketplace\"](around:2000, %f, %f);\n" +
-                "  way[\"building\"=\"warehouse\"](around:2000, %f, %f);\n" +
-                "  way[\"landuse\"=\"industrial\"](around:2000, %f, %f);\n" +
+                "  node(around:2000, %f, %f)[shop];\n" +
+                "  node(around:2000, %f, %f)[office];\n" +
+                "  node(around:2000, %f, %f)[industrial];\n" +
+                "  node(around:2000, %f, %f)[building=warehouse];\n" +
+                "  node(around:2000, %f, %f)[amenity=fuel];\n" +
+                "  node(around:2000, %f, %f)[amenity=bank];\n" +
+                "  node(around:2000, %f, %f)[amenity=marketplace];\n" +
+                "  way(around:2000, %f, %f)[building=warehouse];\n" +
+                "  way(around:2000, %f, %f)[landuse=industrial];\n" +
                 ");\n" +
                 "out center body;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
 
@@ -223,16 +233,24 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
 
     private String executeOverpassQuery(String overpassQuery) {
         String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        headers.setAccept(Collections.singletonList(MediaType.ALL));
-        headers.set("User-Agent", "WebGIS-Production-App/1.0 (aakash.sri@example.com)");
-        HttpEntity<String> request = new HttpEntity<>(payload, headers);
-
         for (String mirror : OVERPASS_MIRRORS) {
             try {
                 log.info("Querying Overpass mirror for CommercialPoi: {}", mirror);
-                return restTemplate.postForObject(mirror, request, String.class);
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(mirror))
+                        .timeout(Duration.ofSeconds(5))
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .header("User-Agent", "WebGIS-Production-App/1.0 (aakash.sri@example.com)")
+                        .POST(HttpRequest.BodyPublishers.ofString(payload))
+                        .build();
+
+                HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                if (response.statusCode() == 200) {
+                    byte[] bytes = response.body();
+                    return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
+                } else {
+                    log.warn("Overpass mirror failed for CommercialPoi: {} with status: {}", mirror, response.statusCode());
+                }
             } catch (Exception e) {
                 log.warn("Overpass mirror failed for CommercialPoi: {} due to: {}", mirror, e.getMessage());
             }
