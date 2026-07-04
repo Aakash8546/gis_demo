@@ -3710,7 +3710,12 @@ out center;`;
                         features: [
                           { key: 'elevation_meters', label: 'Elevation', desc: 'Height above sea level in meters.' },
                           { key: 'slope_degrees', label: 'Terrain Slope', desc: 'Shows how steep or flat the land is.' },
-                          { key: 'lulc_class', label: 'Land Cover Type', desc: 'Primary usage of the land (e.g. urban, forest, farm).' }
+                          { key: 'lulc_class', label: 'Land Cover Type', desc: 'Primary usage of the land (e.g. urban, forest, farm).' },
+                          { key: 'ndvi_value', label: 'Vegetation Cover Index (NDVI)', desc: 'Normalized Difference Vegetation Index (0.0 to 1.0) indicating density of green vegetation.' },
+                          { key: 'ndvi_mean', label: 'Average Vegetation Index', desc: 'Mean greenness density across the custom boundary.' },
+                          { key: 'ndvi_min', label: 'Minimum Vegetation Index', desc: 'Lowest greenness index recorded inside the area.' },
+                          { key: 'ndvi_max', label: 'Maximum Vegetation Index', desc: 'Highest greenness index recorded inside the area.' },
+                          { key: 'ndvi_stddev', label: 'Vegetation Variety (StdDev)', desc: 'Standard deviation of vegetation health across the area.' }
                         ]
                       },
                       {
@@ -3750,6 +3755,8 @@ out center;`;
                         icon: '🍃',
                         features: [
                           { key: 'pm2_5_concentration', label: 'Air Quality (PM2.5)', desc: 'Concentration of fine air particulate matter.' },
+                          { key: 'nearest_cpcb_station_name', label: 'Nearest Monitoring Station', desc: 'Nearest official CPCB air quality sensor.' },
+                          { key: 'nearest_cpcb_station_distance', label: 'Distance to Station', desc: 'Proximity to the closest air quality ground truth sensor.' },
                           { key: 'forestAreaSqKm', label: 'Green Cover Area', desc: 'Total green forest area in square kilometers.', path: 'summary.forestAreaSqKm' }
                         ]
                       },
@@ -3792,6 +3799,26 @@ out center;`;
                       }
                     ];
 
+                    // Check for LULC percentages and add them dynamically to the land card
+                    if (spatialFeatures?.featureVector?.land_use) {
+                      const landCard = humanFriendlyCards.find(c => c.id === 'land');
+                      if (landCard) {
+                        for (const key in spatialFeatures.featureVector.land_use) {
+                          if (key.endsWith("_percentage")) {
+                            const name = key.replace("_percentage", "").replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
+                            const label = `${name} Cover Ratio`;
+                            if (!landCard.features.some(f => f.key === key)) {
+                              landCard.features.push({
+                                key: key,
+                                label: label,
+                                desc: `Percentage area of the zone classified as ${name.toLowerCase()}.`
+                              });
+                            }
+                          }
+                        }
+                      }
+                    }
+
                     const getFeatureInfo = (feat) => {
                       let rawVal = undefined;
                       let normVal = undefined;
@@ -3827,6 +3854,12 @@ out center;`;
                       if (raw === undefined || raw === null) return 'No data';
                       
                       if (typeof raw === 'number') {
+                        if (key.includes('ndvi') || units === 'index') {
+                          return raw.toFixed(3);
+                        }
+                        if (units === 'percent') {
+                          return `${raw.toFixed(1)}%`;
+                        }
                         if (units === 'meters') {
                           if (raw >= 1000) {
                             return `${(raw / 1000).toFixed(1)} km`;
