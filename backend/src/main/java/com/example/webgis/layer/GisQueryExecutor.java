@@ -45,8 +45,8 @@ public class GisQueryExecutor {
         Map<String, Object> results = new LinkedHashMap<>();
         futures.forEach((layerId, future) -> {
             try {
-                // Timeout of 5 seconds per layer query
-                results.put(layerId, future.get(5, TimeUnit.SECONDS));
+                // Timeout of 15 seconds per layer query to allow mirror fallbacks
+                results.put(layerId, future.get(15, TimeUnit.SECONDS));
             } catch (TimeoutException e) {
                 log.warn("Query timeout for layer '{}'", layerId);
                 future.cancel(true);
