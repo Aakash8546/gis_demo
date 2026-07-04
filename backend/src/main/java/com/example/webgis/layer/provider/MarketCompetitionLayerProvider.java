@@ -8,7 +8,11 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -19,15 +23,21 @@ import java.util.*;
 public class MarketCompetitionLayerProvider implements GisLayerProvider {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final HttpClient httpClient;
 
     private static final String[] OVERPASS_MIRRORS = {
-            "https://overpass-api.de/api/interpreter",
-            "https://lz4.overpass-api.de/api/interpreter",
-            "https://z.overpass-api.de/api/interpreter",
+            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+            "https://overpass.private.coffee/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter",
-            "https://overpass.nchc.org.tw/api/interpreter"
+            "https://overpass-api.de/api/interpreter",
+            "https://overpass.openstreetmap.ru/api/interpreter"
     };
+
+    public MarketCompetitionLayerProvider() {
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(2))
+                .build();
+    }
 
     @Override
     public String getLayerId() {
@@ -52,14 +62,14 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
         String query = String.format(Locale.US,
                 "[out:json][timeout:10];\n" +
                 "(\n" +
-                "  node[\"shop\"=\"wholesale\"](around:5000, %f, %f);\n" +
-                "  node[\"shop\"=\"beverages\"](around:5000, %f, %f);\n" +
-                "  node[\"shop\"=\"supermarket\"](around:3000, %f, %f);\n" +
-                "  node[\"shop\"=\"convenience\"](around:2000, %f, %f);\n" +
-                "  node[\"building\"=\"warehouse\"](around:5000, %f, %f);\n" +
-                "  way[\"building\"=\"warehouse\"](around:5000, %f, %f);\n" +
-                "  node[\"industrial\"=\"warehouse\"](around:5000, %f, %f);\n" +
-                "  node[\"amenity\"=\"cold_storage\"](around:5000, %f, %f);\n" +
+                "  node(around:5000, %f, %f)[shop=wholesale];\n" +
+                "  node(around:5000, %f, %f)[shop=beverages];\n" +
+                "  node(around:3000, %f, %f)[shop=supermarket];\n" +
+                "  node(around:2000, %f, %f)[shop=convenience];\n" +
+                "  node(around:5000, %f, %f)[building=warehouse];\n" +
+                "  way(around:5000, %f, %f)[building=warehouse];\n" +
+                "  node(around:5000, %f, %f)[industrial=warehouse];\n" +
+                "  node(around:5000, %f, %f)[amenity=cold_storage];\n" +
                 ");\n" +
                 "out center body;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
 
@@ -199,16 +209,24 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
 
     private String executeOverpassQuery(String overpassQuery) {
         String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        headers.setAccept(Collections.singletonList(MediaType.ALL));
-        headers.set("User-Agent", "WebGIS-Production-App/1.0 (aakash.sri@example.com)");
-        HttpEntity<String> request = new HttpEntity<>(payload, headers);
-
         for (String mirror : OVERPASS_MIRRORS) {
             try {
                 log.info("Querying Overpass mirror for MarketCompetition: {}", mirror);
-                return restTemplate.postForObject(mirror, request, String.class);
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(mirror))
+                        .timeout(Duration.ofSeconds(5))
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .header("User-Agent", "WebGIS-Production-App/1.0 (aakash.sri@example.com)")
+                        .POST(HttpRequest.BodyPublishers.ofString(payload))
+                        .build();
+
+                HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                if (response.statusCode() == 200) {
+                    byte[] bytes = response.body();
+                    return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
+                } else {
+                    log.warn("Overpass mirror failed for MarketCompetition: {} with status: {}", mirror, response.statusCode());
+                }
             } catch (Exception e) {
                 log.warn("Overpass mirror failed for MarketCompetition: {} due to: {}", mirror, e.getMessage());
             }
