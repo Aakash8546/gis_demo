@@ -2159,13 +2159,13 @@ out center;`;
           basemapLayersRef.current.satellite,
           basemapLayersRef.current.satelliteLabels,
           basemapLayersRef.current.varanasi_mbtiles,
+          lulcLayerRef.current, // Render LULC below interactive overlays so vector highlights are visible!
           highlightLayer, selectedPointLayer, detailHighlightLayer, distanceMeasureLayer,
           drawLayer,
           decisionSupportPinsLayer,
           clickedRelationshipTargetLayer,
           focusedHeritageLayer,
-          intelLayer,
-          lulcLayerRef.current  // LULC renders on top so colors are visible
+          intelLayer
         ],
         overlays: [tooltipOverlay, hoverTooltipOverlay],
         controls: defaultControls().extend([new ScaleLine()]),
@@ -4018,9 +4018,7 @@ out center;`;
                       const cardFeaturesWithData = card.features.map(f => {
                         const info = getFeatureInfo(f);
                         return { ...f, ...info };
-                      }).filter(f => f.rawVal !== undefined && f.rawVal !== null);
-
-                      if (cardFeaturesWithData.length === 0) return null;
+                      });
 
                       const isExpanded = !!expandedAreaCards[card.id];
 
@@ -4046,23 +4044,30 @@ out center;`;
                           {isExpanded && (
                             <div className="border-t border-white/5 p-3 space-y-2 bg-slate-950/20">
                               {cardFeaturesWithData.map((f) => {
-                                const isSelected = selectedDetailKey === f.key;
+                                const hasData = f.rawVal !== undefined && f.rawVal !== null;
+                                const isSelected = selectedDetailKey === f.key && hasData;
                                 return (
                                   <div
                                     key={f.key}
-                                    onClick={() => setSelectedDetailKey(prev => prev === f.key ? null : f.key)}
-                                    className={`p-2.5 rounded-xl border transition-all cursor-pointer select-none space-y-1.5 ${
-                                      isSelected
-                                        ? 'bg-amber-500/10 border-amber-500/30 shadow-lg shadow-amber-900/5'
-                                        : 'bg-transparent border-transparent hover:bg-slate-800/20'
+                                    onClick={() => {
+                                      if (hasData) {
+                                        setSelectedDetailKey(prev => prev === f.key ? null : f.key);
+                                      }
+                                    }}
+                                    className={`p-2.5 rounded-xl border transition-all select-none space-y-1.5 ${
+                                      !hasData
+                                        ? 'opacity-40 cursor-not-allowed bg-slate-900/5 border-slate-900/5'
+                                        : isSelected
+                                          ? 'bg-amber-500/10 border-amber-500/30 shadow-lg shadow-amber-900/5 cursor-pointer'
+                                          : 'bg-transparent border-transparent hover:bg-slate-800/20 cursor-pointer'
                                     }`}
                                   >
                                     <div className="flex justify-between font-medium text-slate-200 text-xs">
                                       <span className="text-[11px] font-semibold tracking-wide text-slate-300">
                                         {f.label}
                                       </span>
-                                      <span className={`font-mono font-bold transition-colors ${isSelected ? 'text-amber-400' : 'text-cyan-300'}`}>
-                                        {formatValue(f.rawVal, f.key, f.units)}
+                                      <span className={`font-mono font-bold transition-colors ${!hasData ? 'text-slate-600' : isSelected ? 'text-amber-400' : 'text-cyan-300'}`}>
+                                        {hasData ? formatValue(f.rawVal, f.key, f.units) : "Not detected"}
                                       </span>
                                     </div>
                                     
