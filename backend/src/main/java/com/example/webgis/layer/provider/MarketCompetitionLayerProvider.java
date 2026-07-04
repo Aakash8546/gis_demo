@@ -214,7 +214,7 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
                         .uri(URI.create(mirror))
                         .timeout(Duration.ofSeconds(5))
                         .header("Content-Type", "application/x-www-form-urlencoded")
-                        .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava8546@gmail.com)")
+                        .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)")
                         .POST(HttpRequest.BodyPublishers.ofString(payload))
                         .build();
 

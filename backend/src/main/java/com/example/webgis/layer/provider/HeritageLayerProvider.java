@@ -236,7 +236,7 @@ public class HeritageLayerProvider implements GisLayerProvider {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         headers.setAccept(Collections.singletonList(MediaType.ALL));
-        headers.set("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava8546@gmail.com)");
+        headers.set("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)");
         HttpEntity<String> request = new HttpEntity<>(payload, headers);
 
         for (String mirror : OVERPASS_MIRRORS) {
