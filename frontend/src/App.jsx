@@ -1319,14 +1319,13 @@ out center;`;
     try {
       const [knowledgeRes, assessmentRes] = await Promise.all([
         fetch(`/api/knowledge/context?lat=${lat}&lon=${lon}&radius=${radiusToUse}`),
-        fetch('/api/assessment/site', {
+        fetch('/api/features/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             latitude: lat,
             longitude: lon,
-            radius: radiusToUse,
-            businessType: 'distribution_center'
+            radius: radiusToUse
           })
         })
       ]);
