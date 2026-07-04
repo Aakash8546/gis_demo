@@ -758,6 +758,7 @@ function App() {
   const [siteAssessment, setSiteAssessment] = useState(null);
   const [siteAssessmentLoading, setSiteAssessmentLoading] = useState(false);
   const [siteAssessmentError, setSiteAssessmentError] = useState(null);
+  const [decisionSubTab, setDecisionSubTab] = useState('general');
   const [knowledgeRadius, setKnowledgeRadius] = useState(2000); // default 2km (in meters)
   const [showBuffer, setShowBuffer] = useState(true);
   const [showKgVisualizer, setShowKgVisualizer] = useState(false);
@@ -3784,6 +3785,32 @@ out center;`;
               <DecisionPanelErrorBoundary key={selectedCoordinates ? selectedCoordinates.join(',') : 'none'}>
               <div className="space-y-4 max-h-[62vh] overflow-y-auto pr-1 custom-scrollbar">
                 
+                {/* Decision Panel Sub-tabs */}
+                <div className="flex border-b border-white/10 pb-1 pointer-events-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setDecisionSubTab('general')}
+                    className={`flex-1 text-center py-2 text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${
+                      decisionSubTab === 'general'
+                        ? 'text-cyan-400 border-b-2 border-cyan-500 font-extrabold'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    🗺️ General Audit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDecisionSubTab('business')}
+                    className={`flex-1 text-center py-2 text-[10px] font-bold uppercase tracking-wider transition-all duration-200 ${
+                      decisionSubTab === 'business'
+                        ? 'text-cyan-400 border-b-2 border-cyan-500 font-extrabold'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    🥤 Distribution Center
+                  </button>
+                </div>
+
                 {/* 1. Audit Search Radius */}
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
                   <div className="flex items-center justify-between">
@@ -3828,7 +3855,144 @@ out center;`;
                   </div>
                 </div>
 
-                {/* 2. Suitability Gauge Card */}
+                {/* 2. Suitability Gauge Card & conditional views */}
+                {decisionSubTab === 'business' ? (
+                  <>
+                    {siteAssessmentLoading ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-xs animate-pulse">
+                        <Loader2 className="h-8 w-8 animate-spin text-cyan-400 mb-3" />
+                        <span>Calculating site suitability metrics...</span>
+                      </div>
+                    ) : siteAssessmentError ? (
+                      <div className="text-xs text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-2xl p-4 text-center space-y-2 pointer-events-auto">
+                        <p className="font-semibold">Query Failed</p>
+                        <p className="text-[11px] text-slate-400">{siteAssessmentError}</p>
+                      </div>
+                    ) : !siteAssessment ? (
+                      <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/20 p-6 text-xs text-slate-400 text-center">
+                        No Site Assessment Loaded.
+                      </div>
+                    ) : (
+                      <>
+                        {/* 1. Overall Suitability Score & Verdict */}
+                        <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 flex items-center justify-between gap-4 pointer-events-auto">
+                          <div className="space-y-2">
+                            <h3 className="text-sm font-bold text-white leading-snug">
+                              Feasibility Analysis
+                            </h3>
+                            <div className="flex flex-wrap gap-1.5">
+                              <span className="text-[8px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border bg-cyan-500/10 text-cyan-300 border-cyan-500/20">
+                                Coca-Cola distribution
+                              </span>
+                              <span className={`text-[8px] uppercase tracking-wider font-bold px-2 py-0.5 rounded border ${
+                                siteAssessment.overallScore >= 75 ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' :
+                                siteAssessment.overallScore >= 55 ? 'bg-amber-500/10 text-amber-300 border-amber-500/20' :
+                                'bg-rose-500/10 text-rose-300 border-rose-500/20'
+                              }`}>
+                                {siteAssessment.overallVerdict.toUpperCase()}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex flex-col items-center justify-center shrink-0">
+                            <div className="relative flex items-center justify-center h-12 w-12">
+                              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                                <path
+                                  className="text-slate-800"
+                                  strokeWidth="3.5"
+                                  stroke="currentColor"
+                                  fill="none"
+                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                />
+                                <path
+                                  className="transition-all duration-1000 ease-out"
+                                  strokeWidth="3.5"
+                                  strokeDasharray={`${siteAssessment.overallScore}, 100`}
+                                  strokeLinecap="round"
+                                  stroke={
+                                    siteAssessment.overallScore >= 75 ? '#10b981' :
+                                    siteAssessment.overallScore >= 55 ? '#f59e0b' :
+                                    '#f43f5e'
+                                  }
+                                  fill="none"
+                                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                />
+                              </svg>
+                              <span className="absolute text-xs font-black text-white font-mono">{siteAssessment.overallScore}%</span>
+                            </div>
+                            <span className="text-[7px] text-slate-500 uppercase tracking-wider font-bold mt-1">FEASIBILITY</span>
+                          </div>
+                        </div>
+
+                        {/* 2. Category Breakdown */}
+                        <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">CATEGORY SCORES</span>
+                          <div className="space-y-3">
+                            {Object.entries(siteAssessment.categories || {}).map(([key, cat]) => {
+                              const scoreVal = cat.score;
+                              return (
+                                <div key={key} className="space-y-1">
+                                  <div className="flex justify-between text-[11px] font-medium text-slate-300">
+                                    <span className="capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
+                                    <span className="font-mono font-bold">{scoreVal}%</span>
+                                  </div>
+                                  <div className="w-full bg-slate-950/60 rounded-full h-1.5 border border-white/5">
+                                    <div className={`h-1.5 rounded-full ${
+                                      scoreVal >= 75 ? 'bg-emerald-500' :
+                                      scoreVal >= 55 ? 'bg-amber-500' :
+                                      'bg-rose-500'
+                                    }`} style={{ width: `${scoreVal}%` }}></div>
+                                  </div>
+                                  <span className="text-[9px] text-slate-500 leading-none block italic">{cat.verdict}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* 3. Feasibility Recommendations */}
+                        <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">FEASIBILITY RECOMMENDATIONS</span>
+                          <div className="space-y-2 max-h-[22vh] overflow-y-auto custom-scrollbar pr-1">
+                            {(siteAssessment.recommendations || []).map((rec, index) => {
+                              const borderClass = 
+                                rec.type === 'positive' ? 'border-emerald-500/25 bg-emerald-500/5 text-emerald-300' :
+                                rec.type === 'negative' ? 'border-rose-500/25 bg-rose-500/5 text-rose-300' :
+                                'border-amber-500/25 bg-amber-500/5 text-amber-300';
+                              
+                              return (
+                                <div
+                                  key={index}
+                                  className={`text-[10px] p-2.5 rounded-lg border leading-relaxed ${borderClass}`}
+                                >
+                                  {rec.text}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* 4. Active Data Contributors */}
+                        <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-2">
+                          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">CONTRIBUTING DATA SOURCES</span>
+                          <div className="grid grid-cols-2 gap-2">
+                            {(siteAssessment.dataSources || []).map((src, index) => (
+                              <div key={index} className="p-2 rounded bg-slate-950/40 border border-white/5 space-y-0.5">
+                                <p className="text-[10px] font-semibold text-white/95 truncate">{src.name}</p>
+                                <div className="flex justify-between text-[8px] text-slate-500">
+                                  <span>Quality: <span className="text-cyan-400">{src.coverage}</span></span>
+                                  <span>{src.lastUpdated.substring(0, 7)}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {/* 2. Suitability Gauge Card */}
                 {(() => {
                   try {
                   const lat = selectedCoordinates ? selectedCoordinates[1] : null;
@@ -4307,6 +4471,8 @@ out center;`;
                     );
                   }
                 })()}
+                  </>
+                )}
 
                 {/* 5. Summary Statistics */}
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
