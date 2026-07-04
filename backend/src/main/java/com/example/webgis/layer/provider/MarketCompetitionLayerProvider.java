@@ -26,11 +26,9 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
     private final HttpClient httpClient;
 
     private static final String[] OVERPASS_MIRRORS = {
-            "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-            "https://overpass.private.coffee/api/interpreter",
-            "https://overpass.kumi.systems/api/interpreter",
             "https://overpass-api.de/api/interpreter",
-            "https://overpass.openstreetmap.ru/api/interpreter"
+            "https://lz4.overpass-api.de/api/interpreter",
+            "https://z.overpass-api.de/api/interpreter"
     };
 
     public MarketCompetitionLayerProvider() {
@@ -216,7 +214,7 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
                         .uri(URI.create(mirror))
                         .timeout(Duration.ofSeconds(5))
                         .header("Content-Type", "application/x-www-form-urlencoded")
-                        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/115.0")
+                        .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava8546@gmail.com)")
                         .POST(HttpRequest.BodyPublishers.ofString(payload))
                         .build();
 

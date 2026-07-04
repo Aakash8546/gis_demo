@@ -22,11 +22,9 @@ public class HeritageLayerProvider implements GisLayerProvider {
     private final RestTemplate restTemplate = new RestTemplate();
 
     private static final String[] OVERPASS_MIRRORS = {
-            "https://overpass.osm.ch/api/interpreter",
             "https://overpass-api.de/api/interpreter",
             "https://lz4.overpass-api.de/api/interpreter",
-            "https://z.overpass-api.de/api/interpreter",
-            "https://overpass.kumi.systems/api/interpreter"
+            "https://z.overpass-api.de/api/interpreter"
     };
 
     @Override
@@ -238,7 +236,7 @@ public class HeritageLayerProvider implements GisLayerProvider {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         headers.setAccept(Collections.singletonList(MediaType.ALL));
-        headers.set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/115.0");
+        headers.set("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava8546@gmail.com)");
         HttpEntity<String> request = new HttpEntity<>(payload, headers);
 
         for (String mirror : OVERPASS_MIRRORS) {
