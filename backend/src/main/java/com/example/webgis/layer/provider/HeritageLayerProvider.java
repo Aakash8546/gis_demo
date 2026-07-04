@@ -240,7 +240,7 @@ public class HeritageLayerProvider implements GisLayerProvider {
         HttpEntity<String> request = new HttpEntity<>(payload, headers);
 
         synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
-            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
             for (String mirror : OVERPASS_MIRRORS) {
             try {
                 return restTemplate.postForObject(mirror, request, String.class);

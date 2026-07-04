@@ -233,7 +233,7 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
         String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
         synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
             // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
             for (String mirror : OVERPASS_MIRRORS) {
                 try {
                     log.info("Querying Overpass mirror for CommercialPoi: {}", mirror);

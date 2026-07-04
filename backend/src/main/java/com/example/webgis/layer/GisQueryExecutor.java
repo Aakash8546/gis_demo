@@ -46,7 +46,7 @@ public class GisQueryExecutor {
         futures.forEach((layerId, future) -> {
             try {
                 // Timeout of 15 seconds per layer query to allow mirror fallbacks
-                results.put(layerId, future.get(15, TimeUnit.SECONDS));
+                results.put(layerId, future.get(35, TimeUnit.SECONDS));
             } catch (TimeoutException e) {
                 log.warn("Query timeout for layer '{}'", layerId);
                 future.cancel(true);
@@ -80,7 +80,7 @@ public class GisQueryExecutor {
         futures.forEach((layerId, future) -> {
             try {
                 // Timeout of 8 seconds for polygon analysis
-                results.put(layerId, future.get(8, TimeUnit.SECONDS));
+                results.put(layerId, future.get(35, TimeUnit.SECONDS));
             } catch (TimeoutException e) {
                 log.warn("Polygon query timeout for layer '{}'", layerId);
                 future.cancel(true);
