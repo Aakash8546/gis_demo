@@ -295,7 +295,7 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
                         log.warn("Overpass mirror failed for LogisticsAccess: {} with status: {}", mirror, response.statusCode());
                     }
                 } catch (Exception e) {
-                    log.warn("Overpass mirror failed for LogisticsAccess: {} due to: {}", mirror, e.getMessage());
+                    log.warn("Overpass mirror failed for LogisticsAccess: {} due to:", mirror, e);
                 }
             }
         }

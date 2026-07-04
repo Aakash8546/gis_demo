@@ -253,7 +253,7 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
                         log.warn("Overpass mirror failed for CommercialPoi: {} with status: {}", mirror, response.statusCode());
                     }
                 } catch (Exception e) {
-                    log.warn("Overpass mirror failed for CommercialPoi: {} due to: {}", mirror, e.getMessage());
+                    log.warn("Overpass mirror failed for CommercialPoi: {} due to:", mirror, e);
                 }
             }
         }

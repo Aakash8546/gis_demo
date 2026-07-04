@@ -229,7 +229,7 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
                         log.warn("Overpass mirror failed for MarketCompetition: {} with status: {}", mirror, response.statusCode());
                     }
                 } catch (Exception e) {
-                    log.warn("Overpass mirror failed for MarketCompetition: {} due to: {}", mirror, e.getMessage());
+                    log.warn("Overpass mirror failed for MarketCompetition: {} due to:", mirror, e);
                 }
             }
         }

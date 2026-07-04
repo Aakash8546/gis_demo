@@ -303,7 +303,7 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
                         log.warn("Overpass mirror failed for Infrastructure: {} with status: {}", mirror, response.statusCode());
                     }
                 } catch (Exception e) {
-                    log.warn("Overpass mirror failed for Infrastructure: {} due to: {}", mirror, e.getMessage());
+                    log.warn("Overpass mirror failed for Infrastructure: {} due to:", mirror, e);
                 }
             }
         }

@@ -228,7 +228,7 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
                         log.warn("Overpass mirror failed: {} with status: {}", mirror, response.statusCode());
                     }
                 } catch (Exception e) {
-                    log.warn("Overpass mirror failed: {} due to: {}", mirror, e.getMessage());
+                    log.warn("Overpass mirror failed: {} due to:", mirror, e);
                 }
             }
         }
