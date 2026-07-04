@@ -127,6 +127,8 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
                         nearestHighway.put("name", name.equals("Unnamed") ? "State Highway / Connecting Road" : name);
                         nearestHighway.put("class", hwClass);
                         nearestHighway.put("distance_m", Math.round(distance));
+                        nearestHighway.put("latitude", elemLat);
+                        nearestHighway.put("longitude", elemLon);
                     }
                 } else if ("station".equals(tags.path("railway").asText())) {
                     if (distance < minRailDist) {
@@ -134,6 +136,8 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
                         nearestRail = new LinkedHashMap<>();
                         nearestRail.put("name", name.equals("Unnamed") ? "Local Railway Station" : name);
                         nearestRail.put("distance_m", Math.round(distance));
+                        nearestRail.put("latitude", elemLat);
+                        nearestRail.put("longitude", elemLon);
                     }
                 } else if ("fuel".equals(tags.path("amenity").asText())) {
                     if (distance < minFuelDist) {
@@ -141,6 +145,8 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
                         nearestFuel = new LinkedHashMap<>();
                         nearestFuel.put("name", name.equals("Unnamed") ? "Fuel Station" : name);
                         nearestFuel.put("distance_m", Math.round(distance));
+                        nearestFuel.put("latitude", elemLat);
+                        nearestFuel.put("longitude", elemLon);
                     }
                 }
             }

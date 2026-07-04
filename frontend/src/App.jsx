@@ -622,6 +622,8 @@ function App() {
   const clickedRelationshipTargetSourceRef = useRef(new VectorSource());
   const distanceMeasureSourceRef = useRef(new VectorSource());
   const distanceMeasureLayerRef = useRef(null);
+  const detailHighlightSourceRef = useRef(new VectorSource());
+  const detailHighlightLayerRef = useRef(null);
   const drawInteractionRef = useRef(null);
   const modifyInteractionRef = useRef(null);
   const snapInteractionRef = useRef(null);
@@ -679,6 +681,7 @@ function App() {
   const [layers, setLayers] = useState([]);
   const [selectedMarkersForDistance, setSelectedMarkersForDistance] = useState([]);
   const [selectedCoordinates, setSelectedCoordinates] = useState(null);
+  const [selectedDetailKey, setSelectedDetailKey] = useState(null);
   const [hoverCoordinates, setHoverCoordinates] = useState(null);
   const [drawMode, setDrawMode] = useState('None');
 
@@ -833,6 +836,64 @@ function App() {
       }
     }
   }, [selectedAreaCoords, activeSidebarTab]);
+
+  useEffect(() => {
+    setSelectedDetailKey(null);
+  }, [activeSidebarTab]);
+
+  useEffect(() => {
+    if (!detailHighlightSourceRef.current) return;
+    detailHighlightSourceRef.current.clear();
+
+    if (!selectedDetailKey || !spatialFeatures) return;
+
+    let targetFeature = null;
+    for (const cat in spatialFeatures.featureVector) {
+      const catData = spatialFeatures.featureVector[cat];
+      if (catData && catData[selectedDetailKey] !== undefined) {
+        targetFeature = catData[selectedDetailKey];
+        break;
+      }
+    }
+
+    if (!targetFeature || !targetFeature.metadata) return;
+
+    const destLat = targetFeature.metadata.latitude;
+    const destLon = targetFeature.metadata.longitude;
+
+    if (destLat && destLon && destLat !== 0 && destLon !== 0) {
+      let originLonLat = selectedCoordinates;
+      if (!originLonLat && selectedAreaCoords && selectedAreaCoords.length > 0) {
+        originLonLat = selectedAreaCoords[0];
+      }
+
+      if (originLonLat) {
+        const originCoord = fromLonLat(originLonLat);
+        const destCoord = fromLonLat([destLon, destLat]);
+
+        const lineFeature = new Feature({
+          geometry: new LineString([originCoord, destCoord]),
+          type: 'line'
+        });
+
+        const pinFeature = new Feature({
+          geometry: new Point(destCoord),
+          type: 'pin'
+        });
+
+        detailHighlightSourceRef.current.addFeatures([lineFeature, pinFeature]);
+
+        if (mapRef.current) {
+          const extent = lineFeature.getGeometry().getExtent();
+          mapRef.current.getView().fit(extent, {
+            padding: [80, 80, 80, 80],
+            maxZoom: 16,
+            duration: 600
+          });
+        }
+      }
+    }
+  }, [selectedDetailKey, spatialFeatures, selectedCoordinates, selectedAreaCoords]);
 
   // Synchronize selection point marker and query buffer circle on the map
   useEffect(() => {
@@ -1866,6 +1927,40 @@ out center;`;
     selectedPointLayer.set('kind', 'overlay');
     selectedPointLayerRef.current = selectedPointLayer;
 
+    const detailHighlightLayer = new VectorLayer({
+      source: detailHighlightSourceRef.current,
+      style: (feature) => {
+        const type = feature.get('type');
+        if (type === 'line') {
+          return new Style({
+            stroke: new Stroke({
+              color: '#f59e0b',
+              width: 3,
+              lineDash: [6, 6]
+            })
+          });
+        }
+        return [
+          new Style({
+            image: new CircleStyle({
+              radius: 12,
+              fill: new Fill({ color: 'rgba(245, 158, 11, 0.25)' }),
+              stroke: new Stroke({ color: '#f59e0b', width: 2 })
+            })
+          }),
+          new Style({
+            image: new CircleStyle({
+              radius: 5,
+              fill: new Fill({ color: '#ffffff' }),
+              stroke: new Stroke({ color: '#f59e0b', width: 2 })
+            })
+          })
+        ];
+      }
+    });
+    detailHighlightLayer.set('kind', 'overlay');
+    detailHighlightLayerRef.current = detailHighlightLayer;
+
     const focusedHeritageLayer = new VectorLayer({
       source: focusedHeritageSourceRef.current,
       style: (feature) => {
@@ -2039,7 +2134,7 @@ out center;`;
           basemapLayersRef.current.satellite,
           basemapLayersRef.current.satelliteLabels,
           basemapLayersRef.current.varanasi_mbtiles,
-          highlightLayer, selectedPointLayer, distanceMeasureLayer,
+          highlightLayer, selectedPointLayer, detailHighlightLayer, distanceMeasureLayer,
           drawLayer,
           decisionSupportPinsLayer,
           clickedRelationshipTargetLayer,
@@ -3924,25 +4019,71 @@ out center;`;
                           </button>
 
                           {isExpanded && (
-                            <div className="border-t border-white/5 p-4 space-y-4 bg-slate-950/20">
-                              {cardFeaturesWithData.map((f) => (
-                                <div key={f.key} className="space-y-1">
-                                  <div className="flex justify-between font-medium text-slate-200 text-xs">
-                                    <span className="text-[11px] font-semibold tracking-wide text-slate-300">
-                                      {f.label}
-                                    </span>
-                                    <span className="font-mono text-cyan-300 font-bold">
-                                      {formatValue(f.rawVal, f.key, f.units)}
-                                    </span>
+                            <div className="border-t border-white/5 p-3 space-y-2 bg-slate-950/20">
+                              {cardFeaturesWithData.map((f) => {
+                                const isSelected = selectedDetailKey === f.key;
+                                return (
+                                  <div
+                                    key={f.key}
+                                    onClick={() => setSelectedDetailKey(prev => prev === f.key ? null : f.key)}
+                                    className={`p-2.5 rounded-xl border transition-all cursor-pointer select-none space-y-1.5 ${
+                                      isSelected
+                                        ? 'bg-amber-500/10 border-amber-500/30 shadow-lg shadow-amber-900/5'
+                                        : 'bg-transparent border-transparent hover:bg-slate-800/20'
+                                    }`}
+                                  >
+                                    <div className="flex justify-between font-medium text-slate-200 text-xs">
+                                      <span className="text-[11px] font-semibold tracking-wide text-slate-300">
+                                        {f.label}
+                                      </span>
+                                      <span className={`font-mono font-bold transition-colors ${isSelected ? 'text-amber-400' : 'text-cyan-300'}`}>
+                                        {formatValue(f.rawVal, f.key, f.units)}
+                                      </span>
+                                    </div>
+                                    
+                                    <p className="text-[9.5px] text-slate-500 leading-normal">
+                                      {f.desc}
+                                    </p>
+
+                                    {isSelected && (
+                                      <div className="pt-1.5 mt-1.5 border-t border-white/5 text-[9.5px] text-slate-300 space-y-1 leading-relaxed">
+                                        <p className="font-semibold text-amber-300 flex items-center gap-1">
+                                          <span>ℹ️</span> Detailed Insight
+                                        </p>
+                                        <p className="text-slate-400 font-sans">
+                                          {(() => {
+                                            if (f.key === 'nearest_highway_distance') {
+                                              return 'We detected the nearest main highway or primary arterial link at this point. Pinned on the map with a warm-orange dashed line showing the shortest connection route.';
+                                            }
+                                            if (f.key === 'nearest_rail_station_distance') {
+                                              return 'The closest railway junction connecting this location to local and national train networks. Drawn on the map to display proximity.';
+                                            }
+                                            if (f.key === 'nearest_fuel_station_distance') {
+                                              return 'The nearest fuel/petrol station detected. Essential for mapping energy access, fuel logistics, and transportation routing.';
+                                            }
+                                            if (f.key === 'nearest_substation_distance') {
+                                              return 'The closest electrical grid power substation. Indicates electricity distribution density and grid infrastructure stability.';
+                                            }
+                                            if (f.key === 'nearest_telecom_tower_distance') {
+                                              return 'The closest mobile transmission tower. Highlights coverage reliability, network density, and digital communication access.';
+                                            }
+                                            if (f.key === 'nearest_water_infrastructure_distance') {
+                                              return 'The closest public water supply source, reservoir, or distribution pipe. Crucial for utility mapping.';
+                                            }
+                                            if (f.key === 'nearest_post_office_distance') {
+                                              return 'The nearest public postal services building. Shows general utility and public infrastructure convenience.';
+                                            }
+                                            if (f.key === 'nearest_cpcb_station_distance' || f.key === 'nearest_cpcb_station_name') {
+                                              return 'The closest official government Central Pollution Control Board (CPCB) air quality ground sensor. Shows where the ground-truth pollution data is measured.';
+                                            }
+                                            return 'Calculated dynamically over the selected region. Values represent spatial aggregations from regional databases and satellite raster datasets.';
+                                          })()}
+                                        </p>
+                                      </div>
+                                    )}
                                   </div>
-                                  
-                                  <p className="text-[9.5px] text-slate-500 leading-normal">
-                                    {f.desc}
-                                  </p>
-
-
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                         </div>

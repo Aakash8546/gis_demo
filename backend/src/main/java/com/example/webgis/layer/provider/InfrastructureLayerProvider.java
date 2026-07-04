@@ -87,9 +87,20 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
             JsonNode elements = root.path("elements");
 
             double minSubstationDist = Double.MAX_VALUE;
+            double closestSubstationLat = 0.0;
+            double closestSubstationLon = 0.0;
+
             double minWaterDist = Double.MAX_VALUE;
+            double closestWaterLat = 0.0;
+            double closestWaterLon = 0.0;
+
             double minTowerDist = Double.MAX_VALUE;
+            double closestTowerLat = 0.0;
+            double closestTowerLon = 0.0;
+
             double minPostDist = Double.MAX_VALUE;
+            double closestPostLat = 0.0;
+            double closestPostLon = 0.0;
 
             int powerLines = 0;
             int telecomTowers = 0;
@@ -101,16 +112,32 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
                 double distance = calculateDistance(lat, lon, elemLat, elemLon);
 
                 if ("substation".equals(tags.path("power").asText())) {
-                    minSubstationDist = Math.min(minSubstationDist, distance);
+                    if (distance < minSubstationDist) {
+                        minSubstationDist = distance;
+                        closestSubstationLat = elemLat;
+                        closestSubstationLon = elemLon;
+                    }
                 } else if ("line".equals(tags.path("power").asText())) {
                     powerLines++;
                 } else if ("water_tower".equals(tags.path("man_made").asText()) || "water_point".equals(tags.path("amenity").asText())) {
-                    minWaterDist = Math.min(minWaterDist, distance);
+                    if (distance < minWaterDist) {
+                        minWaterDist = distance;
+                        closestWaterLat = elemLat;
+                        closestWaterLon = elemLon;
+                    }
                 } else if ("tower".equals(tags.path("man_made").asText())) {
-                    minTowerDist = Math.min(minTowerDist, distance);
+                    if (distance < minTowerDist) {
+                        minTowerDist = distance;
+                        closestTowerLat = elemLat;
+                        closestTowerLon = elemLon;
+                    }
                     telecomTowers++;
                 } else if ("post_office".equals(tags.path("amenity").asText())) {
-                    minPostDist = Math.min(minPostDist, distance);
+                    if (distance < minPostDist) {
+                        minPostDist = distance;
+                        closestPostLat = elemLat;
+                        closestPostLon = elemLon;
+                    }
                 }
             }
 
@@ -118,19 +145,27 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
             power.put("nearest_substation_m", minSubstationDist == Double.MAX_VALUE ? 1800 : Math.round(minSubstationDist));
             power.put("power_lines_within_2km", powerLines);
             power.put("score", minSubstationDist < 1000 ? "excellent" : (minSubstationDist < 2000 ? "good" : "adequate"));
+            power.put("latitude", closestSubstationLat);
+            power.put("longitude", closestSubstationLon);
 
             Map<String, Object> water = new LinkedHashMap<>();
             water.put("nearest_source_m", minWaterDist == Double.MAX_VALUE ? 900 : Math.round(minWaterDist));
             water.put("type", minWaterDist == Double.MAX_VALUE ? "water_point" : "water_tower");
             water.put("score", minWaterDist < 1000 ? "good" : "adequate");
+            water.put("latitude", closestWaterLat);
+            water.put("longitude", closestWaterLon);
 
             Map<String, Object> telecom = new LinkedHashMap<>();
             telecom.put("towers_within_2km", telecomTowers);
             telecom.put("nearest_tower_m", minTowerDist == Double.MAX_VALUE ? 650 : Math.round(minTowerDist));
             telecom.put("score", telecomTowers > 2 ? "excellent" : "good");
+            telecom.put("latitude", closestTowerLat);
+            telecom.put("longitude", closestTowerLon);
 
             Map<String, Object> postal = new LinkedHashMap<>();
             postal.put("nearest_post_office_m", minPostDist == Double.MAX_VALUE ? 1400 : Math.round(minPostDist));
+            postal.put("latitude", closestPostLat);
+            postal.put("longitude", closestPostLon);
 
             result.put("status", "success");
             result.put("power", power);
