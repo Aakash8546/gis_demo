@@ -48,7 +48,7 @@ public class HeritageLayerProvider implements GisLayerProvider {
 
         // Find heritage/historic/ghats nodes/ways within 1km around the coordinate
         String query = String.format(Locale.US,
-                "[out:json][timeout:6];\n" +
+                "[out:json][timeout:30];\n" +
                 "(\n" +
                 "  node(around:1000, %f, %f)[\"historic\"];\n" +
                 "  way(around:1000, %f, %f)[\"historic\"];\n" +
@@ -154,7 +154,7 @@ public class HeritageLayerProvider implements GisLayerProvider {
         String polyStr = polyBuilder.toString().trim();
 
         String query = String.format(Locale.US,
-                "[out:json][timeout:8];\n" +
+                "[out:json][timeout:30];\n" +
                 "(\n" +
                 "  node(poly: \"%s\")[\"historic\"];\n" +
                 "  way(poly: \"%s\")[\"historic\"];\n" +

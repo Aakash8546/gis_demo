@@ -58,7 +58,7 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
         
         // Overpass QL query to find amenities, highways, and waterways within 500m around coordinate
         String query = String.format(Locale.US,
-                "[out:json][timeout:5];\n" +
+                "[out:json][timeout:30];\n" +
                 "(\n" +
                 "  node(around:500, %f, %f)[\"amenity\"];\n" +
                 "  way(around:500, %f, %f)[\"amenity\"];\n" +
@@ -136,7 +136,7 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
 
         // Query Overpass to retrieve elements within the polygon boundary
         String query = String.format(Locale.US,
-                "[out:json][timeout:8];\n" +
+                "[out:json][timeout:30];\n" +
                 "(\n" +
                 "  node(poly: \"%s\")[\"amenity\"];\n" +
                 "  way(poly: \"%s\")[\"amenity\"];\n" +
