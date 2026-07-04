@@ -83,6 +83,24 @@ public class LocalPostgisLayerProvider implements GisLayerProvider {
             result.put("slopeDegrees", null);
         }
 
+        // 3. Get NDVI Value
+        try {
+            if (tableExists("varanasi_ndvi")) {
+                String ndviSql = "WITH pt AS ( " +
+                                 "  SELECT ST_SetSRID(ST_MakePoint(?, ?), 4326) AS geom " +
+                                 ") " +
+                                 "SELECT ST_Value(n.rast, 1, pt.geom) AS ndvi " +
+                                 "FROM public.varanasi_ndvi n, pt " +
+                                 "WHERE ST_Intersects(n.rast, pt.geom) " +
+                                 "LIMIT 1";
+                List<Double> ndviVals = jdbcTemplate.query(ndviSql, (rs, rowNum) -> rs.getDouble(1), lon, lat);
+                result.put("ndviValue", ndviVals.isEmpty() ? null : ndviVals.get(0));
+            }
+        } catch (Exception e) {
+            log.warn("Failed to query local NDVI point: {}", e.getMessage());
+            result.put("ndviValue", null);
+        }
+
         return result;
     }
 
@@ -152,6 +170,31 @@ public class LocalPostgisLayerProvider implements GisLayerProvider {
             }
         } catch (Exception e) {
             log.warn("Failed to calculate local DEM zonal stats: {}", e.getMessage());
+        }
+
+        // 3. Get Zonal Stats for NDVI (raster stats)
+        try {
+            if (tableExists("varanasi_ndvi")) {
+                String ndviStatsSql = "WITH user_polygon AS (" +
+                                      "  SELECT ST_MakeValid(ST_GeomFromText(?, 4326)) AS geom" +
+                                      "), " +
+                                      "clipped_ndvi AS (" +
+                                      "  SELECT ST_Union(ST_Clip(n.rast, p.geom)) AS rast " +
+                                      "  FROM varanasi_ndvi n, user_polygon p " +
+                                      "  WHERE ST_Intersects(n.rast, p.geom)" +
+                                      ") " +
+                                      "SELECT (ST_SummaryStats(rast)).* FROM clipped_ndvi WHERE rast IS NOT NULL";
+                List<Map<String, Object>> ndviRows = jdbcTemplate.queryForList(ndviStatsSql, wkt);
+                if (!ndviRows.isEmpty()) {
+                    Map<String, Object> row = ndviRows.get(0);
+                    result.put("ndviMin", row.get("min"));
+                    result.put("ndviMax", row.get("max"));
+                    result.put("ndviMean", row.get("mean"));
+                    result.put("ndviStdDev", row.get("stddev"));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to calculate local NDVI zonal stats: {}", e.getMessage());
         }
 
         return result;

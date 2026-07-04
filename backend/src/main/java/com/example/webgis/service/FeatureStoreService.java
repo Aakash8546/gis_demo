@@ -11,6 +11,36 @@ import java.util.*;
 @Service
 @Slf4j
 public class FeatureStoreService {
+    private static class CpcbStation {
+        String name;
+        double lat;
+        double lon;
+
+        CpcbStation(String name, double lat, double lon) {
+            this.name = name;
+            this.lat = lat;
+            this.lon = lon;
+        }
+    }
+
+    private static final List<CpcbStation> CPCB_STATIONS = List.of(
+        new CpcbStation("IESD Banaras Hindu University (BHU)", 25.2677, 82.9913),
+        new CpcbStation("Ardhali Bazar", 25.3505, 82.9783),
+        new CpcbStation("Varanasi Cantonment", 25.3283, 82.9739),
+        new CpcbStation("Sanjay Nagar", 25.3121, 83.0012)
+    );
+
+    private static double calculateHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
+        final int R = 6371000; // Earth radius in meters
+        double latDistance = Math.toRadians(lat2 - lat1);
+        double lonDistance = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(latDistance / 2) * Math.sin(latDistance / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(lonDistance / 2) * Math.sin(lonDistance / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
 
     private final GisQueryExecutor gisQueryExecutor;
 
@@ -33,8 +63,8 @@ public class FeatureStoreService {
         featureVector.put("demographics", buildDemographicsFeatures(layersData));
         featureVector.put("infrastructure", buildInfrastructureFeatures(layersData));
         featureVector.put("market", buildMarketFeatures(layersData));
-        featureVector.put("environment", buildEnvironmentFeatures(layersData));
-        featureVector.put("land_use", buildLandUseFeatures(layersData));
+        featureVector.put("environment", buildEnvironmentFeatures(layersData, lat, lon));
+        featureVector.put("land_use", buildLandUseFeatures(layersData, lat, lon));
         featureVector.put("weather", buildWeatherFeatures(layersData));
         featureVector.put("climate", buildClimateFeatures(layersData));
         featureVector.put("safety", buildSafetyFeatures(layersData));
@@ -67,6 +97,20 @@ public class FeatureStoreService {
     public Map<String, Object> queryFeaturesPolygon(List<List<Double>> outerRing) {
         log.info("Generating spatial feature vector for Polygon with {} points", outerRing.size());
 
+        // Centroid calculation for metadata and analysis
+        double sumLat = 0;
+        double sumLon = 0;
+        int count = 0;
+        for (List<Double> pt : outerRing) {
+            if (pt.size() >= 2) {
+                sumLon += pt.get(0);
+                sumLat += pt.get(1);
+                count++;
+            }
+        }
+        double centroidLat = count > 0 ? sumLat / count : 0.0;
+        double centroidLon = count > 0 ? sumLon / count : 0.0;
+
         // Construct the multi-dimensional structure required by queryPolygon: List<List<List<Double>>>
         List<List<List<Double>>> coordinates = new ArrayList<>();
         coordinates.add(outerRing);
@@ -81,29 +125,17 @@ public class FeatureStoreService {
         featureVector.put("demographics", buildDemographicsFeatures(layersData));
         featureVector.put("infrastructure", buildInfrastructureFeatures(layersData));
         featureVector.put("market", buildMarketFeatures(layersData));
-        featureVector.put("environment", buildEnvironmentFeatures(layersData));
-        featureVector.put("land_use", buildLandUseFeatures(layersData));
+        featureVector.put("environment", buildEnvironmentFeatures(layersData, centroidLat, centroidLon));
+        featureVector.put("land_use", buildLandUseFeatures(layersData, centroidLat, centroidLon));
         featureVector.put("weather", buildWeatherFeatures(layersData));
         featureVector.put("climate", buildClimateFeatures(layersData));
         featureVector.put("safety", buildSafetyFeatures(layersData));
 
         // 3. Assemble response with metadata and versioning
         Map<String, Object> response = new LinkedHashMap<>();
-        
-        // Centroid calculation for metadata
-        double sumLat = 0;
-        double sumLon = 0;
-        int count = 0;
-        for (List<Double> pt : outerRing) {
-            if (pt.size() >= 2) {
-                sumLon += pt.get(0);
-                sumLat += pt.get(1);
-                count++;
-            }
-        }
         Map<String, Double> coords = new LinkedHashMap<>();
-        coords.put("latitude", count > 0 ? sumLat / count : 0.0);
-        coords.put("longitude", count > 0 ? sumLon / count : 0.0);
+        coords.put("latitude", centroidLat);
+        coords.put("longitude", centroidLon);
 
         response.put("coordinates", coords);
         response.put("schemaVersion", "v1.0.0");
@@ -121,6 +153,8 @@ public class FeatureStoreService {
 
         return response;
     }
+
+    
 
     @SuppressWarnings("unchecked")
     private Map<String, FeatureValue> buildTransportationFeatures(Map<String, Object> layersData) {
@@ -305,7 +339,7 @@ public class FeatureStoreService {
     }
 
     @SuppressWarnings("unchecked")
-    private Map<String, FeatureValue> buildEnvironmentFeatures(Map<String, Object> layersData) {
+    private Map<String, FeatureValue> buildEnvironmentFeatures(Map<String, Object> layersData, double queryLat, double queryLon) {
         Map<String, FeatureValue> features = new LinkedHashMap<>();
         Map<String, Object> aqi = (Map<String, Object>) layersData.get("air-quality-advanced");
 
@@ -315,7 +349,7 @@ public class FeatureStoreService {
         double pm25 = 15.0;
         double aqiVal = 45.0;
 
-        // Try getting environment details from postgis and custom maps
+        // Try getting environment details from postgis
         Map<String, Object> postgis = (Map<String, Object>) layersData.get("local-postgis");
         if (postgis != null && postgis.containsKey("flood_risk")) {
             floodRisk = (String) postgis.get("flood_risk");
@@ -323,7 +357,7 @@ public class FeatureStoreService {
 
         if (aqi != null && !"fallback".equals(aqi.get("status")) && !"error".equals(aqi.get("status"))) {
             if (aqi.containsKey("pm2_5")) pm25 = ((Number) aqi.get("pm2_5")).doubleValue();
-            if (aqi.containsKey("co")) aqiVal = ((Number) aqi.get("co")).doubleValue() / 10.0; // proxy to scale
+            if (aqi.containsKey("co")) aqiVal = ((Number) aqi.get("co")).doubleValue() / 10.0;
         }
 
         features.put("flood_risk_classification", new FeatureValue(floodRisk, "Low".equalsIgnoreCase(floodRisk) ? 1.0 : ("Medium".equalsIgnoreCase(floodRisk) ? 0.5 : 0.0), Map.of("source", "Local PostGIS DB", "units", "categorical", "type", "categorical")));
@@ -332,11 +366,29 @@ public class FeatureStoreService {
         double normPm = Math.max(0.0, 1.0 - (pm25 / 150.0));
         features.put("pm2_5_concentration", new FeatureValue(pm25, normPm, Map.of("source", "Open-Meteo Air Quality", "units", "ug/m3", "type", "numeric")));
 
+        // Calculate proximity to CPCB monitoring stations
+        CpcbStation closestStation = null;
+        double minDistance = Double.MAX_VALUE;
+        for (CpcbStation station : CPCB_STATIONS) {
+            double dist = calculateHaversineDistance(queryLat, queryLon, station.lat, station.lon);
+            if (dist < minDistance) {
+                minDistance = dist;
+                closestStation = station;
+            }
+        }
+
+        if (closestStation != null) {
+            features.put("nearest_cpcb_station_name", new FeatureValue(closestStation.name, null, Map.of("source", "CPCB India Portal", "units", "categorical", "type", "categorical")));
+            features.put("nearest_cpcb_station_distance", new FeatureValue(minDistance, Math.max(0.0, 1.0 - (minDistance / 10000.0)), Map.of("source", "CPCB India Portal", "units", "meters", "type", "numeric")));
+        }
+
         return features;
     }
 
+    
+
     @SuppressWarnings("unchecked")
-    private Map<String, FeatureValue> buildLandUseFeatures(Map<String, Object> layersData) {
+    private Map<String, FeatureValue> buildLandUseFeatures(Map<String, Object> layersData, double queryLat, double queryLon) {
         Map<String, FeatureValue> features = new LinkedHashMap<>();
         Map<String, Object> postgis = (Map<String, Object>) layersData.get("local-postgis");
 
@@ -345,21 +397,60 @@ public class FeatureStoreService {
         String lulcClass = "urban";
 
         if (postgis != null && !"fallback".equals(postgis.get("status")) && !"error".equals(postgis.get("status"))) {
-            if (postgis.containsKey("elevation")) elevation = ((Number) postgis.get("elevation")).doubleValue();
-            if (postgis.containsKey("slope")) slope = ((Number) postgis.get("slope")).doubleValue();
-            if (postgis.containsKey("lulc_class")) lulcClass = (String) postgis.get("lulc_class");
+            if (postgis.containsKey("elevationMeters") && postgis.get("elevationMeters") != null) elevation = ((Number) postgis.get("elevationMeters")).doubleValue();
+            if (postgis.containsKey("slopeDegrees") && postgis.get("slopeDegrees") != null) slope = ((Number) postgis.get("slopeDegrees")).doubleValue();
+            if (postgis.containsKey("lulcClass") && postgis.get("lulcClass") != null) lulcClass = (String) postgis.get("lulcClass");
         }
 
-        double normElev = Math.min(1.0, elevation / 2000.0);
-        features.put("elevation_meters", new FeatureValue(elevation, normElev, Map.of("source", "Local DEM DB", "units", "meters", "type", "numeric")));
+        if (postgis != null && postgis.containsKey("elevationMean") && postgis.get("elevationMean") != null) {
+            double meanElev = ((Number) postgis.get("elevationMean")).doubleValue();
+            double minElev = ((Number) postgis.get("elevationMin")).doubleValue();
+            double maxElev = ((Number) postgis.get("elevationMax")).doubleValue();
+            double stdDevElev = ((Number) postgis.get("elevationStdDev")).doubleValue();
+
+            features.put("elevation_mean", new FeatureValue(meanElev, Math.min(1.0, meanElev / 2000.0), Map.of("source", "Local DEM DB", "units", "meters", "type", "numeric")));
+            features.put("elevation_min", new FeatureValue(minElev, Math.min(1.0, minElev / 2000.0), Map.of("source", "Local DEM DB", "units", "meters", "type", "numeric")));
+            features.put("elevation_max", new FeatureValue(maxElev, Math.min(1.0, maxElev / 2000.0), Map.of("source", "Local DEM DB", "units", "meters", "type", "numeric")));
+            features.put("elevation_stddev", new FeatureValue(stdDevElev, null, Map.of("source", "Local DEM DB", "units", "meters", "type", "numeric")));
+        } else {
+            double normElev = Math.min(1.0, elevation / 2000.0);
+            features.put("elevation_meters", new FeatureValue(elevation, normElev, Map.of("source", "Local DEM DB", "units", "meters", "type", "numeric")));
+        }
 
         double normSlope = Math.max(0.0, 1.0 - (slope / 30.0));
         features.put("slope_degrees", new FeatureValue(slope, normSlope, Map.of("source", "Local Slope DB", "units", "degrees", "type", "numeric")));
-
         features.put("lulc_class", new FeatureValue(lulcClass, null, Map.of("source", "Local PostGIS DB", "units", "categorical", "type", "categorical")));
+
+        // LULC percentages (for polygon query)
+        if (postgis != null && postgis.containsKey("lulcBreakdown")) {
+            List<Map<String, Object>> breakdown = (List<Map<String, Object>>) postgis.get("lulcBreakdown");
+            for (Map<String, Object> item : breakdown) {
+                String className = (String) item.get("className");
+                double pct = ((Number) item.get("percentage")).doubleValue();
+                features.put(className.toLowerCase().replace(" ", "_") + "_percentage", new FeatureValue(pct, pct / 100.0, Map.of("source", "Local PostGIS DB", "units", "percent", "type", "numeric")));
+            }
+        }
+
+        // NDVI features
+        if (postgis != null && postgis.containsKey("ndviMean") && postgis.get("ndviMean") != null) {
+            double meanNdvi = ((Number) postgis.get("ndviMean")).doubleValue();
+            double minNdvi = ((Number) postgis.get("ndviMin")).doubleValue();
+            double maxNdvi = ((Number) postgis.get("ndviMax")).doubleValue();
+            double stdDevNdvi = ((Number) postgis.get("ndviStdDev")).doubleValue();
+
+            features.put("ndvi_mean", new FeatureValue(meanNdvi, meanNdvi, Map.of("source", "Local PostGIS Raster (GEE)", "units", "index", "type", "numeric")));
+            features.put("ndvi_min", new FeatureValue(minNdvi, minNdvi, Map.of("source", "Local PostGIS Raster (GEE)", "units", "index", "type", "numeric")));
+            features.put("ndvi_max", new FeatureValue(maxNdvi, maxNdvi, Map.of("source", "Local PostGIS Raster (GEE)", "units", "index", "type", "numeric")));
+            features.put("ndvi_stddev", new FeatureValue(stdDevNdvi, null, Map.of("source", "Local PostGIS Raster (GEE)", "units", "index", "type", "numeric")));
+        } else if (postgis != null && postgis.containsKey("ndviValue") && postgis.get("ndviValue") != null) {
+            double ndviVal = ((Number) postgis.get("ndviValue")).doubleValue();
+            features.put("ndvi_value", new FeatureValue(ndviVal, ndviVal, Map.of("source", "Local PostGIS Raster (GEE)", "units", "index", "type", "numeric")));
+        }
 
         return features;
     }
+
+    
 
     @SuppressWarnings("unchecked")
     private Map<String, FeatureValue> buildWeatherFeatures(Map<String, Object> layersData) {
