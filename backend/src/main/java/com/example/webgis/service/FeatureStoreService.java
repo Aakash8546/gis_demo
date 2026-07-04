@@ -161,11 +161,11 @@ public class FeatureStoreService {
         Map<String, FeatureValue> features = new LinkedHashMap<>();
         Map<String, Object> logistics = (Map<String, Object>) layersData.get("logistics-access");
 
-        long hwyDist = 10000L;
-        String hwyClass = "unknown";
-        long railDist = 10000L;
-        long fuelDist = 10000L;
-        int roadCount = 0;
+        Long hwyDist = null;
+        String hwyClass = null;
+        Long railDist = null;
+        Long fuelDist = null;
+        Integer roadCount = null;
 
         double hwyLat = 0.0, hwyLon = 0.0;
         double railLat = 0.0, railLon = 0.0;
@@ -177,16 +177,16 @@ public class FeatureStoreService {
             Map<String, Object> fuel = (Map<String, Object>) logistics.get("nearestFuelStation");
             Map<String, Object> density = (Map<String, Object>) logistics.get("roadDensity");
 
-            if (hwy != null && hwy.containsKey("distance_m")) hwyDist = ((Number) hwy.get("distance_m")).longValue();
+            if (hwy != null && hwy.get("distance_m") != null) hwyDist = ((Number) hwy.get("distance_m")).longValue();
             if (hwy != null && hwy.containsKey("class")) hwyClass = (String) hwy.get("class");
             if (hwy != null && hwy.containsKey("latitude")) hwyLat = ((Number) hwy.get("latitude")).doubleValue();
             if (hwy != null && hwy.containsKey("longitude")) hwyLon = ((Number) hwy.get("longitude")).doubleValue();
 
-            if (rail != null && rail.containsKey("distance_m")) railDist = ((Number) rail.get("distance_m")).longValue();
+            if (rail != null && rail.get("distance_m") != null) railDist = ((Number) rail.get("distance_m")).longValue();
             if (rail != null && rail.containsKey("latitude")) railLat = ((Number) rail.get("latitude")).doubleValue();
             if (rail != null && rail.containsKey("longitude")) railLon = ((Number) rail.get("longitude")).doubleValue();
 
-            if (fuel != null && fuel.containsKey("distance_m")) fuelDist = ((Number) fuel.get("distance_m")).longValue();
+            if (fuel != null && fuel.get("distance_m") != null) fuelDist = ((Number) fuel.get("distance_m")).longValue();
             if (fuel != null && fuel.containsKey("latitude")) fuelLat = ((Number) fuel.get("latitude")).doubleValue();
             if (fuel != null && fuel.containsKey("longitude")) fuelLon = ((Number) fuel.get("longitude")).doubleValue();
 
@@ -194,17 +194,17 @@ public class FeatureStoreService {
         }
 
         // Distance to highway: normalize close to 1.0, far to 0.0 (max 10km)
-        double normHwy = Math.max(0.0, 1.0 - (hwyDist / 10000.0));
+        Double normHwy = hwyDist == null ? null : Math.max(0.0, 1.0 - (hwyDist / 10000.0));
         features.put("nearest_highway_distance", new FeatureValue(hwyDist, normHwy, Map.of("source", "OpenStreetMap", "units", "meters", "type", "numeric", "latitude", hwyLat, "longitude", hwyLon)));
         features.put("nearest_highway_class", new FeatureValue(hwyClass, null, Map.of("source", "OpenStreetMap", "units", "categorical", "type", "categorical", "latitude", hwyLat, "longitude", hwyLon)));
 
-        double normRail = Math.max(0.0, 1.0 - (railDist / 15000.0));
+        Double normRail = railDist == null ? null : Math.max(0.0, 1.0 - (railDist / 15000.0));
         features.put("nearest_rail_station_distance", new FeatureValue(railDist, normRail, Map.of("source", "OpenStreetMap", "units", "meters", "type", "numeric", "latitude", railLat, "longitude", railLon)));
 
-        double normFuel = Math.max(0.0, 1.0 - (fuelDist / 5000.0));
+        Double normFuel = fuelDist == null ? null : Math.max(0.0, 1.0 - (fuelDist / 5000.0));
         features.put("nearest_fuel_station_distance", new FeatureValue(fuelDist, normFuel, Map.of("source", "OpenStreetMap", "units", "meters", "type", "numeric", "latitude", fuelLat, "longitude", fuelLon)));
 
-        double normRoads = Math.min(1.0, roadCount / 100.0);
+        Double normRoads = roadCount == null ? null : Math.min(1.0, roadCount / 100.0);
         features.put("road_density_count_2km", new FeatureValue(roadCount, normRoads, Map.of("source", "OpenStreetMap", "units", "count", "type", "numeric")));
 
         return features;
@@ -254,12 +254,12 @@ public class FeatureStoreService {
         Map<String, FeatureValue> features = new LinkedHashMap<>();
         Map<String, Object> infra = (Map<String, Object>) layersData.get("infrastructure");
 
-        long subDist = 10000L;
-        int linesCount = 0;
-        long waterDist = 10000L;
-        long towerDist = 10000L;
-        int towersCount = 0;
-        long postDist = 10000L;
+        Long subDist = null;
+        Integer linesCount = null;
+        Long waterDist = null;
+        Long towerDist = null;
+        Integer towersCount = null;
+        Long postDist = null;
 
         double subLat = 0.0, subLon = 0.0;
         double waterLat = 0.0, waterLon = 0.0;
@@ -273,45 +273,45 @@ public class FeatureStoreService {
             Map<String, Object> postal = (Map<String, Object>) infra.get("postal");
 
             if (power != null) {
-                if (power.containsKey("nearest_substation_m")) subDist = ((Number) power.get("nearest_substation_m")).longValue();
+                if (power.get("nearest_substation_m") != null) subDist = ((Number) power.get("nearest_substation_m")).longValue();
                 if (power.containsKey("power_lines_within_2km")) linesCount = ((Number) power.get("power_lines_within_2km")).intValue();
                 if (power.containsKey("latitude")) subLat = ((Number) power.get("latitude")).doubleValue();
                 if (power.containsKey("longitude")) subLon = ((Number) power.get("longitude")).doubleValue();
             }
             if (water != null) {
-                if (water.containsKey("nearest_source_m")) waterDist = ((Number) water.get("nearest_source_m")).longValue();
+                if (water.get("nearest_source_m") != null) waterDist = ((Number) water.get("nearest_source_m")).longValue();
                 if (water.containsKey("latitude")) waterLat = ((Number) water.get("latitude")).doubleValue();
                 if (water.containsKey("longitude")) waterLon = ((Number) water.get("longitude")).doubleValue();
             }
             if (telecom != null) {
-                if (telecom.containsKey("nearest_tower_m")) towerDist = ((Number) telecom.get("nearest_tower_m")).longValue();
+                if (telecom.get("nearest_tower_m") != null) towerDist = ((Number) telecom.get("nearest_tower_m")).longValue();
                 if (telecom.containsKey("towers_within_2km")) towersCount = ((Number) telecom.get("towers_within_2km")).intValue();
                 if (telecom.containsKey("latitude")) telecomLat = ((Number) telecom.get("latitude")).doubleValue();
                 if (telecom.containsKey("longitude")) telecomLon = ((Number) telecom.get("longitude")).doubleValue();
             }
             if (postal != null) {
-                if (postal.containsKey("nearest_post_office_m")) postDist = ((Number) postal.get("nearest_post_office_m")).longValue();
+                if (postal.get("nearest_post_office_m") != null) postDist = ((Number) postal.get("nearest_post_office_m")).longValue();
                 if (postal.containsKey("latitude")) postalLat = ((Number) postal.get("latitude")).doubleValue();
                 if (postal.containsKey("longitude")) postalLon = ((Number) postal.get("longitude")).doubleValue();
             }
         }
 
-        double normSub = Math.max(0.0, 1.0 - (subDist / 10000.0));
+        Double normSub = subDist == null ? null : Math.max(0.0, 1.0 - (subDist / 10000.0));
         features.put("nearest_substation_distance", new FeatureValue(subDist, normSub, Map.of("source", "OpenStreetMap", "units", "meters", "type", "numeric", "latitude", subLat, "longitude", subLon)));
 
-        double normLines = Math.min(1.0, linesCount / 10.0);
+        Double normLines = linesCount == null ? null : Math.min(1.0, linesCount / 10.0);
         features.put("power_lines_within_2km", new FeatureValue(linesCount, normLines, Map.of("source", "OpenStreetMap", "units", "count", "type", "numeric")));
 
-        double normWater = Math.max(0.0, 1.0 - (waterDist / 5000.0));
+        Double normWater = waterDist == null ? null : Math.max(0.0, 1.0 - (waterDist / 5000.0));
         features.put("nearest_water_infrastructure_distance", new FeatureValue(waterDist, normWater, Map.of("source", "OpenStreetMap", "units", "meters", "type", "numeric", "latitude", waterLat, "longitude", waterLon)));
 
-        double normTower = Math.max(0.0, 1.0 - (towerDist / 5000.0));
+        Double normTower = towerDist == null ? null : Math.max(0.0, 1.0 - (towerDist / 5000.0));
         features.put("nearest_telecom_tower_distance", new FeatureValue(towerDist, normTower, Map.of("source", "OpenStreetMap", "units", "meters", "type", "numeric", "latitude", telecomLat, "longitude", telecomLon)));
 
-        double normTowers = Math.min(1.0, towersCount / 20.0);
+        Double normTowers = towersCount == null ? null : Math.min(1.0, towersCount / 20.0);
         features.put("telecom_towers_within_2km", new FeatureValue(towersCount, normTowers, Map.of("source", "OpenStreetMap", "units", "count", "type", "numeric")));
 
-        double normPost = Math.max(0.0, 1.0 - (postDist / 5000.0));
+        Double normPost = postDist == null ? null : Math.max(0.0, 1.0 - (postDist / 5000.0));
         features.put("nearest_post_office_distance", new FeatureValue(postDist, normPost, Map.of("source", "OpenStreetMap", "units", "meters", "type", "numeric", "latitude", postalLat, "longitude", postalLon)));
 
         return features;
