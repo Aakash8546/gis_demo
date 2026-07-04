@@ -828,9 +828,11 @@ function App() {
   useEffect(() => {
     if (selectedAreaCoords && activeSidebarTab === 'decision') {
       setSelectedCoordinates(null);
-      fetchKnowledgeContext(selectedAreaCoords, true);
+      if (fetchKnowledgeContextRef.current) {
+        fetchKnowledgeContextRef.current(selectedAreaCoords, true);
+      }
     }
-  }, [selectedAreaCoords, activeSidebarTab, fetchKnowledgeContext]);
+  }, [selectedAreaCoords, activeSidebarTab]);
 
   // Synchronize selection point marker and query buffer circle on the map
   useEffect(() => {
