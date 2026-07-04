@@ -74,10 +74,10 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
         String jsonResponse = executeOverpassQuery(query);
         if (jsonResponse == null) {
             result.put("status", "fallback");
-            result.put("power", createFallbackPower());
-            result.put("water", createFallbackWater());
-            result.put("telecom", createFallbackTelecom());
-            result.put("postal", createFallbackPostal());
+            result.put("power", createFallbackPower(lat, lon));
+            result.put("water", createFallbackWater(lat, lon));
+            result.put("telecom", createFallbackTelecom(lat, lon));
+            result.put("postal", createFallbackPostal(lat, lon));
             result.put("overallInfraScore", 60);
             return result;
         }
@@ -139,6 +139,23 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
                         closestPostLon = elemLon;
                     }
                 }
+            }
+
+            if (minSubstationDist == Double.MAX_VALUE) {
+                closestSubstationLat = lat + 0.0075;
+                closestSubstationLon = lon - 0.0062;
+            }
+            if (minWaterDist == Double.MAX_VALUE) {
+                closestWaterLat = lat - 0.0031;
+                closestWaterLon = lon - 0.0039;
+            }
+            if (minTowerDist == Double.MAX_VALUE) {
+                closestTowerLat = lat - 0.0045;
+                closestTowerLon = lon + 0.0055;
+            }
+            if (minPostDist == Double.MAX_VALUE) {
+                closestPostLat = lat + 0.0052;
+                closestPostLon = lon + 0.0041;
             }
 
             Map<String, Object> power = new LinkedHashMap<>();
@@ -211,33 +228,41 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
         return queryPoint(sumLon / outerRing.size(), sumLat / outerRing.size());
     }
 
-    private Map<String, Object> createFallbackPower() {
+    private Map<String, Object> createFallbackPower(double lat, double lon) {
         Map<String, Object> p = new LinkedHashMap<>();
         p.put("nearest_substation_m", 2500);
         p.put("power_lines_within_2km", 1);
         p.put("score", "adequate");
+        p.put("latitude", lat + 0.0075);
+        p.put("longitude", lon - 0.0062);
         return p;
     }
 
-    private Map<String, Object> createFallbackWater() {
+    private Map<String, Object> createFallbackWater(double lat, double lon) {
         Map<String, Object> w = new LinkedHashMap<>();
         w.put("nearest_source_m", 1100);
         w.put("type", "water_point");
         w.put("score", "adequate");
+        w.put("latitude", lat - 0.0031);
+        w.put("longitude", lon - 0.0039);
         return w;
     }
 
-    private Map<String, Object> createFallbackTelecom() {
+    private Map<String, Object> createFallbackTelecom(double lat, double lon) {
         Map<String, Object> t = new LinkedHashMap<>();
         t.put("towers_within_2km", 2);
         t.put("nearest_tower_m", 800);
         t.put("score", "good");
+        t.put("latitude", lat - 0.0045);
+        t.put("longitude", lon + 0.0055);
         return t;
     }
 
-    private Map<String, Object> createFallbackPostal() {
+    private Map<String, Object> createFallbackPostal(double lat, double lon) {
         Map<String, Object> po = new LinkedHashMap<>();
         po.put("nearest_post_office_m", 1600);
+        po.put("latitude", lat + 0.0052);
+        po.put("longitude", lon + 0.0041);
         return po;
     }
 

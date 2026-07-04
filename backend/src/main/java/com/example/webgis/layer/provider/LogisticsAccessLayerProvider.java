@@ -79,9 +79,9 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
         String jsonResponse = executeOverpassQuery(query);
         if (jsonResponse == null) {
             result.put("status", "fallback");
-            result.put("nearestHighway", createFallbackHighway());
-            result.put("nearestRailStation", createFallbackRail());
-            result.put("nearestFuelStation", createFallbackFuel());
+            result.put("nearestHighway", createFallbackHighway(lat, lon));
+            result.put("nearestRailStation", createFallbackRail(lat, lon));
+            result.put("nearestFuelStation", createFallbackFuel(lat, lon));
             result.put("roadDensity", createFallbackRoadDensity());
             result.put("transportScore", 65);
             return result;
@@ -151,9 +151,9 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
                 }
             }
 
-            if (nearestHighway == null) nearestHighway = createFallbackHighway();
-            if (nearestRail == null) nearestRail = createFallbackRail();
-            if (nearestFuel == null) nearestFuel = createFallbackFuel();
+            if (nearestHighway == null) nearestHighway = createFallbackHighway(lat, lon);
+            if (nearestRail == null) nearestRail = createFallbackRail(lat, lon);
+            if (nearestFuel == null) nearestFuel = createFallbackFuel(lat, lon);
 
             Map<String, Object> roadDensity = new LinkedHashMap<>();
             int totalRoads = primaryRoads + secondaryRoads + tertiaryRoads;
@@ -219,25 +219,31 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
         return queryPoint(sumLon / outerRing.size(), sumLat / outerRing.size());
     }
 
-    private Map<String, Object> createFallbackHighway() {
+    private Map<String, Object> createFallbackHighway(double lat, double lon) {
         Map<String, Object> hw = new LinkedHashMap<>();
         hw.put("name", "Varanasi bypass road");
         hw.put("class", "secondary");
         hw.put("distance_m", 1500);
+        hw.put("latitude", lat - 0.008);
+        hw.put("longitude", lon + 0.009);
         return hw;
     }
 
-    private Map<String, Object> createFallbackRail() {
+    private Map<String, Object> createFallbackRail(double lat, double lon) {
         Map<String, Object> rail = new LinkedHashMap<>();
         rail.put("name", "Varanasi City Railway Station");
         rail.put("distance_m", 5800);
+        rail.put("latitude", lat + 0.012);
+        rail.put("longitude", lon - 0.018);
         return rail;
     }
 
-    private Map<String, Object> createFallbackFuel() {
+    private Map<String, Object> createFallbackFuel(double lat, double lon) {
         Map<String, Object> fuel = new LinkedHashMap<>();
         fuel.put("name", "Indian Oil Fuel Station");
         fuel.put("distance_m", 2100);
+        fuel.put("latitude", lat + 0.0025);
+        fuel.put("longitude", lon - 0.0019);
         return fuel;
     }
 
