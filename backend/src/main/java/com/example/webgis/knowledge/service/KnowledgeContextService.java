@@ -47,6 +47,11 @@ public class KnowledgeContextService {
 
     @Transactional(readOnly = true)
     public KnowledgeContext buildKnowledgeContext(double lat, double lon, Double radiusMeters) {
+        return buildKnowledgeContext(lat, lon, radiusMeters, null);
+    }
+
+    @Transactional(readOnly = true)
+    public KnowledgeContext buildKnowledgeContext(double lat, double lon, Double radiusMeters, Map<String, Object> existingLayersData) {
         double radius = (radiusMeters != null) ? radiusMeters : 2000.0;
         long startTime = System.currentTimeMillis();
         log.info("Building Knowledge Graph Context for coordinate lat={}, lon={}, radius={}", lat, lon, radius);
@@ -397,7 +402,11 @@ public class KnowledgeContextService {
         summary.put("floodRisk", floodRisk);
 
         try {
-            summary.put("multiLayerData", queryExecutor.queryPoint(lon, lat));
+            if (existingLayersData != null) {
+                summary.put("multiLayerData", existingLayersData);
+            } else {
+                summary.put("multiLayerData", queryExecutor.queryPoint(lon, lat));
+            }
         } catch (Exception e) {
             log.error("Failed to add multi-layer data to point summary: {}", e.getMessage());
         }
