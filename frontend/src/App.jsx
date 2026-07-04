@@ -3686,11 +3686,11 @@ out center;`;
                         title: 'Roads & Transport',
                         icon: '🚗',
                         features: [
-                          { key: 'nearest_highway_distance', label: 'Nearest Highway', desc: 'Distance to the closest major highway link.' },
-                          { key: 'nearest_highway_class', label: 'Road Type', desc: 'Class of the nearest primary or secondary road.' },
-                          { key: 'nearest_rail_station_distance', label: 'Nearest Railway Station', desc: 'Distance to the nearest train transit point.' },
-                          { key: 'nearest_fuel_station_distance', label: 'Nearest Fuel Station', desc: 'Distance to the closest gas or service station.' },
-                          { key: 'road_density_count_2km', label: 'Road Network Density', desc: 'Total road segments within a 2km driving radius.' }
+                          { key: 'nearest_highway_distance', label: 'Nearest Main Road', desc: 'Distance to the closest primary road or main road.' },
+                          { key: 'nearest_highway_class', label: 'Road Type', desc: 'Type of the closest road (e.g. main road, street).' },
+                          { key: 'nearest_rail_station_distance', label: 'Nearest Train Station', desc: 'Distance to the nearest train station.' },
+                          { key: 'nearest_fuel_station_distance', label: 'Nearest Petrol Pump', desc: 'Distance to the nearest petrol pump or gas station.' },
+                          { key: 'road_density_count_2km', label: 'Road Connections', desc: 'Number of roads within a short drive.' }
                         ]
                       },
                       {
@@ -3698,11 +3698,11 @@ out center;`;
                         title: 'Population',
                         icon: '👥',
                         features: [
-                          { key: 'population_density_per_sqkm', label: 'Population Density', desc: 'Estimated number of people living per square kilometer.' },
-                          { key: 'density_classification', label: 'Urban Classification', desc: 'Urbanization category of this area.' },
-                          { key: 'population_within_1km', label: 'Population (1km)', desc: 'Total estimated population living within 1km.' },
-                          { key: 'population_within_2km', label: 'Population (2km)', desc: 'Total estimated population living within 2km.' },
-                          { key: 'population_within_5km', label: 'Population (5km)', desc: 'Total estimated population living within 5km.' }
+                          { key: 'population_density_per_sqkm', label: 'Population Density', desc: 'Estimated number of people living nearby (per square kilometer).' },
+                          { key: 'density_classification', label: 'Area Type', desc: 'Whether this area is urban (city), semi-urban, or rural.' },
+                          { key: 'population_within_1km', label: 'People Living Nearby (within 1 km)', desc: 'Total estimated number of people living within 1 kilometer.' },
+                          { key: 'population_within_2km', label: 'People Living Nearby (within 2 km)', desc: 'Total estimated number of people living within 2 kilometers.' },
+                          { key: 'population_within_5km', label: 'People Living Nearby (within 5 km)', desc: 'Total estimated number of people living within 5 kilometers.' }
                         ]
                       },
                       {
@@ -3710,14 +3710,14 @@ out center;`;
                         title: 'Land & Terrain',
                         icon: '⛰️',
                         features: [
-                          { key: 'elevation_meters', label: 'Elevation', desc: 'Height above sea level in meters.' },
-                          { key: 'slope_degrees', label: 'Terrain Slope', desc: 'Shows how steep or flat the land is.' },
-                          { key: 'lulc_class', label: 'Land Cover Type', desc: 'Primary usage of the land (e.g. urban, forest, farm).' },
-                          { key: 'ndvi_value', label: 'Vegetation Cover Index (NDVI)', desc: 'Normalized Difference Vegetation Index (0.0 to 1.0) indicating density of green vegetation.' },
-                          { key: 'ndvi_mean', label: 'Average Vegetation Index', desc: 'Mean greenness density across the custom boundary.' },
-                          { key: 'ndvi_min', label: 'Minimum Vegetation Index', desc: 'Lowest greenness index recorded inside the area.' },
-                          { key: 'ndvi_max', label: 'Maximum Vegetation Index', desc: 'Highest greenness index recorded inside the area.' },
-                          { key: 'ndvi_stddev', label: 'Vegetation Variety (StdDev)', desc: 'Standard deviation of vegetation health across the area.' }
+                          { key: 'elevation_meters', label: 'Height Above Sea Level', desc: 'How high the land is above sea level.' },
+                          { key: 'slope_degrees', label: 'Land Slope', desc: 'Shows if the land is flat or steep (in degrees).' },
+                          { key: 'lulc_class', label: 'Current Land Use', desc: 'What the land is currently covered by (e.g. buildings, farming, forest).' },
+                          { key: 'ndvi_value', label: 'Greenery Index', desc: 'A score from 0.0 to 1.0 indicating how green and vegetated the spot is.' },
+                          { key: 'ndvi_mean', label: 'Average Greenery Index', desc: 'Average greenness score across the selected area.' },
+                          { key: 'ndvi_min', label: 'Minimum Greenery Index', desc: 'Lowest greenness score recorded inside the selected area.' },
+                          { key: 'ndvi_max', label: 'Maximum Greenery Index', desc: 'Highest greenness score recorded inside the selected area.' },
+                          { key: 'ndvi_stddev', label: 'Greenery Variety', desc: 'How much the green cover varies across the selected area.' }
                         ]
                       },
                       {
@@ -3725,11 +3725,11 @@ out center;`;
                         title: 'Buildings & Infrastructure',
                         icon: '⚡',
                         features: [
-                          { key: 'nearest_substation_distance', label: 'Nearest Power Substation', desc: 'Distance to the nearest electricity grid station.' },
-                          { key: 'power_lines_within_2km', label: 'Power Lines Count', desc: 'Number of transmission power lines nearby.' },
-                          { key: 'nearest_telecom_tower_distance', label: 'Nearest Telecom Tower', desc: 'Distance to the nearest mobile signal tower.' },
-                          { key: 'telecom_towers_within_2km', label: 'Telecom Towers Count', desc: 'Number of telecom transmission towers nearby.' },
-                          { key: 'nearest_post_office_distance', label: 'Nearest Post Office', desc: 'Distance to the closest postal utility office.' }
+                          { key: 'nearest_substation_distance', label: 'Distance to Power Grid Station', desc: 'Distance to the nearest electricity distribution station.' },
+                          { key: 'power_lines_within_2km', label: 'Nearby Major Power Lines', desc: 'Number of major high-voltage power lines nearby.' },
+                          { key: 'nearest_telecom_tower_distance', label: 'Distance to Mobile Tower', desc: 'Distance to the nearest mobile phone network tower.' },
+                          { key: 'telecom_towers_within_2km', label: 'Nearby Mobile Towers', desc: 'Number of mobile network towers nearby.' },
+                          { key: 'nearest_post_office_distance', label: 'Nearest Post Office', desc: 'Distance to the nearest post office.' }
                         ]
                       },
                       {
@@ -3737,7 +3737,7 @@ out center;`;
                         title: 'Water Availability',
                         icon: '💧',
                         features: [
-                          { key: 'nearest_water_infrastructure_distance', label: 'Nearest Water Infrastructure', desc: 'Distance to the nearest public water source or utility.' }
+                          { key: 'nearest_water_infrastructure_distance', label: 'Distance to Water Utility', desc: 'Distance to the nearest public water pipeline or source.' }
                         ]
                       },
                       {
@@ -3745,10 +3745,10 @@ out center;`;
                         title: 'Nearby Facilities',
                         icon: '🏫',
                         features: [
-                          { key: 'schoolsCount', label: 'Schools Nearby', desc: 'Number of schools detected in the area.', path: 'summary.schoolsCount' },
-                          { key: 'hospitalsCount', label: 'Hospitals Nearby', desc: 'Number of medical facilities in the area.', path: 'summary.hospitalsCount' },
-                          { key: 'gymsCount', label: 'Gyms & Parks', desc: 'Recreational facilities nearby.', path: 'summary.gymsCount' },
-                          { key: 'waterBodiesCount', label: 'Water Bodies', desc: 'Lakes, ponds, or rivers nearby.', path: 'summary.waterBodiesCount' }
+                          { key: 'schoolsCount', label: 'Schools Nearby', desc: 'Number of schools in the area.', path: 'summary.schoolsCount' },
+                          { key: 'hospitalsCount', label: 'Hospitals & Clinics Nearby', desc: 'Number of hospitals and clinics in the area.', path: 'summary.hospitalsCount' },
+                          { key: 'gymsCount', label: 'Gyms & Parks', desc: 'Number of gyms and parks in the area.', path: 'summary.gymsCount' },
+                          { key: 'waterBodiesCount', label: 'Water Bodies Nearby', desc: 'Number of lakes, ponds, or rivers nearby.', path: 'summary.waterBodiesCount' }
                         ]
                       },
                       {
@@ -3756,9 +3756,9 @@ out center;`;
                         title: 'Environment & Air Quality',
                         icon: '🍃',
                         features: [
-                          { key: 'pm2_5_concentration', label: 'Air Quality (PM2.5)', desc: 'Concentration of fine air particulate matter.' },
-                          { key: 'nearest_cpcb_station_name', label: 'Nearest Monitoring Station', desc: 'Nearest official CPCB air quality sensor.' },
-                          { key: 'nearest_cpcb_station_distance', label: 'Distance to Station', desc: 'Proximity to the closest air quality ground truth sensor.' },
+                          { key: 'pm2_5_concentration', label: 'Air Quality (PM2.5)', desc: 'Level of fine dust particles in the air.' },
+                          { key: 'nearest_cpcb_station_name', label: 'Closest Air Monitoring Station', desc: 'Name of the nearest official pollution sensor station.' },
+                          { key: 'nearest_cpcb_station_distance', label: 'Distance to Air Station', desc: 'Distance to the closest official pollution sensor station.' },
                           { key: 'forestAreaSqKm', label: 'Green Cover Area', desc: 'Total green forest area in square kilometers.', path: 'summary.forestAreaSqKm' }
                         ]
                       },
@@ -3767,13 +3767,13 @@ out center;`;
                         title: 'Weather & Climate',
                         icon: '☀️',
                         features: [
-                          { key: 'current_temperature', label: 'Current Temperature', desc: 'Live temperature at this location.' },
-                          { key: 'current_humidity', label: 'Humidity', desc: 'Percentage of water vapor in the air.' },
+                          { key: 'current_temperature', label: 'Current Temperature', desc: 'Current temperature at this spot.' },
+                          { key: 'current_humidity', label: 'Air Humidity', desc: 'How humid the air is.' },
                           { key: 'current_wind_speed', label: 'Wind Speed', desc: 'Current speed of the wind.' },
-                          { key: 'annual_average_rainfall', label: 'Average Rainfall', desc: 'Average daily precipitation index.' },
-                          { key: 'annual_average_relative_humidity', label: 'Relative Humidity', desc: 'Annual average humidity percentage.' },
-                          { key: 'average_solar_radiation', label: 'Solar Sunlight', desc: 'Average daily sunlight energy falling on the area.' },
-                          { key: 'annual_average_temperature', label: 'Average Temperature', desc: 'Mean annual temperature of the region.' }
+                          { key: 'annual_average_rainfall', label: 'Yearly Average Rainfall', desc: 'Average daily rainfall for the area.' },
+                          { key: 'annual_average_relative_humidity', label: 'Yearly Average Humidity', desc: 'Average yearly humidity percentage.' },
+                          { key: 'average_solar_radiation', label: 'Sunlight Energy', desc: 'Average daily solar sunlight energy falling on the area.' },
+                          { key: 'annual_average_temperature', label: 'Yearly Average Temperature', desc: 'Average yearly temperature in this region.' }
                         ]
                       },
                       {
@@ -3781,10 +3781,10 @@ out center;`;
                         title: 'Disaster Information',
                         icon: '⚠️',
                         features: [
-                          { key: 'flood_risk_classification', label: 'Flood Risk Level', desc: 'Vulnerability of the area to flooding.' },
-                          { key: 'seismic_hazard_zone', label: 'Earthquake Zone', desc: 'Seismic risk zone classification (e.g. Zone III).' },
-                          { key: 'recent_seismic_activity_count_200km', label: 'Recent Earthquakes', desc: 'Number of minor or major quakes recorded within 200km.' },
-                          { key: 'maximum_recent_magnitude', label: 'Max Earthquake Magnitude', desc: 'Highest magnitude recorded among recent tremors.' }
+                          { key: 'flood_risk_classification', label: 'Flood Risk Level', desc: 'Risk level of flooding in this area.' },
+                          { key: 'seismic_hazard_zone', label: 'Earthquake Risk Zone', desc: 'Official earthquake risk classification (e.g. Zone III).' },
+                          { key: 'recent_seismic_activity_count_200km', label: 'Recent Earthquakes', desc: 'Number of minor or major earthquakes recorded within 200 kilometers.' },
+                          { key: 'maximum_recent_magnitude', label: 'Strongest Recent Earthquake', desc: 'Highest earthquake strength recorded among recent tremors.' }
                         ]
                       },
                       {
@@ -3792,11 +3792,11 @@ out center;`;
                         title: 'Economy & Business',
                         icon: '💼',
                         features: [
-                          { key: 'retail_density_per_sqkm', label: 'Shop Density', desc: 'Number of retail shops operating per square kilometer.' },
-                          { key: 'supermarkets_count', label: 'Supermarkets', desc: 'Total large grocery stores nearby.' },
-                          { key: 'convenience_stores_count', label: 'Convenience Stores', desc: 'Total corner or local utility shops nearby.' },
-                          { key: 'beverage_distributors_count', label: 'Beverage Outlets', desc: 'Number of cold drink or beverage shops nearby.' },
-                          { key: 'warehouses_count', label: 'Warehouses', desc: 'Storage depots and warehouses found nearby.' }
+                          { key: 'retail_density_per_sqkm', label: 'Density of Shops', desc: 'Number of shops operating per square kilometer.' },
+                          { key: 'supermarkets_count', label: 'Supermarkets', desc: 'Number of large grocery stores nearby.' },
+                          { key: 'convenience_stores_count', label: 'Convenience Stores', desc: 'Number of small local stores nearby.' },
+                          { key: 'beverage_distributors_count', label: 'Beverage Shops', desc: 'Number of cold drink or tea/beverage shops nearby.' },
+                          { key: 'warehouses_count', label: 'Warehouses', desc: 'Number of warehouses and storage depots nearby.' }
                         ]
                       }
                     ];
@@ -3808,7 +3808,7 @@ out center;`;
                         for (const key in spatialFeatures.featureVector.land_use) {
                           if (key.endsWith("_percentage")) {
                             const name = key.replace("_percentage", "").replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
-                            const label = `${name} Cover Ratio`;
+                            const label = `${name} Area Percentage`;
                             if (!landCard.features.some(f => f.key === key)) {
                               landCard.features.push({
                                 key: key,
@@ -3947,21 +3947,7 @@ out center;`;
                   })()}
                 </div>
 
-                {/* 3. Human Friendly Sources List */}
-                <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-2 pointer-events-auto">
-                  <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">VERIFIED DATA SOURCES</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(spatialFeatures.sources || []).map((src, index) => (
-                      <div key={index} className="p-2.5 rounded bg-slate-950/40 border border-white/5 space-y-0.5">
-                        <p className="text-[10px] font-semibold text-white/95 truncate">{src.name}</p>
-                        <div className="flex justify-between text-[8px] text-slate-500">
-                          <span>Coverage: <span className="text-cyan-400">Verified</span></span>
-                          <span>{src.lastUpdated.substring(0, 7)}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+
 
               </div>
             )}
