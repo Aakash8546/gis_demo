@@ -3664,7 +3664,7 @@ out center;`;
                       onChange={(e) => setKnowledgeRadius(parseInt(e.target.value))}
                       onMouseUp={() => {
                         if (selectedCoordinates) {
-                          fetchKnowledgeContext(selectedCoordinates, knowledgeRadius);
+                          fetchKnowledgeContext(selectedCoordinates, false, knowledgeRadius);
                         }
                       }}
                       className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
