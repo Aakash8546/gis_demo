@@ -3855,6 +3855,16 @@ out center;`;
                     const formatValue = (raw, key, units) => {
                       if (raw === undefined || raw === null) return 'No data';
                       
+                      if (key === 'seismic_hazard_zone') {
+                        if (typeof raw === 'string') {
+                          const zone = raw.trim().toUpperCase().replace(/\s/g, '');
+                          if (zone.includes('ZONEIII')) return 'Moderate Risk (Zone III)';
+                          if (zone.includes('ZONEII')) return 'Low Risk (Zone II)';
+                          if (zone.includes('ZONEIV')) return 'High Risk (Zone IV)';
+                          if (zone.includes('ZONEV')) return 'Very High Risk (Zone V)';
+                        }
+                      }
+                      
                       if (typeof raw === 'number') {
                         if (key.includes('ndvi') || units === 'index') {
                           return raw.toFixed(3);
@@ -3875,7 +3885,10 @@ out center;`;
                       }
                       
                       if (typeof raw === 'string') {
-                        return raw.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim().replace(/^\w/, c => c.toUpperCase());
+                        if (/^[A-Z]{2,6}$/.test(raw)) {
+                          return raw;
+                        }
+                        return raw.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').trim().replace(/^\w/, c => c.toUpperCase());
                       }
                       
                       return String(raw);
@@ -3927,16 +3940,7 @@ out center;`;
                                     {f.desc}
                                   </p>
 
-                                  {f.normVal !== null && f.normVal !== undefined && (
-                                    <div className="pt-0.5">
-                                      <div className="w-full bg-slate-950/60 rounded-full h-1 border border-white/5 overflow-hidden">
-                                        <div
-                                          className="h-full rounded-full bg-cyan-400/80 transition-all duration-500"
-                                          style={{ width: `${f.normVal * 100}%` }}
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
+
                                 </div>
                               ))}
                             </div>
