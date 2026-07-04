@@ -30,8 +30,8 @@ public class SiteAssessmentService {
         // 1. Gather all GIS Layer responses
         Map<String, Object> layersData = gisQueryExecutor.queryPoint(lon, lat);
         
-        // 2. Fetch Knowledge Context
-        KnowledgeContext context = knowledgeContextService.buildKnowledgeContext(lat, lon, queryRadius);
+        // 2. Fetch Knowledge Context (pass layersData to prevent duplicate API queries)
+        KnowledgeContext context = knowledgeContextService.buildKnowledgeContext(lat, lon, queryRadius, layersData);
         
         // 3. Compute Category Scores
         Map<String, Object> categories = new LinkedHashMap<>();
