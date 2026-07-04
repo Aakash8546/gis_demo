@@ -26,9 +26,9 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
     private final HttpClient httpClient;
 
     private static final String[] OVERPASS_MIRRORS = {
-            "https://z.overpass-api.de/api/interpreter",
             "https://overpass-api.de/api/interpreter",
-            "https://lz4.overpass-api.de/api/interpreter"
+            "https://lz4.overpass-api.de/api/interpreter",
+            "https://z.overpass-api.de/api/interpreter"
     };
 
     public CommercialPoiLayerProvider() {

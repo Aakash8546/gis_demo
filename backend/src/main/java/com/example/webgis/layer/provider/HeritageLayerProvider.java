@@ -22,9 +22,9 @@ public class HeritageLayerProvider implements GisLayerProvider {
     private final RestTemplate restTemplate = new RestTemplate();
 
     private static final String[] OVERPASS_MIRRORS = {
+            "https://lz4.overpass-api.de/api/interpreter",
             "https://z.overpass-api.de/api/interpreter",
-            "https://overpass-api.de/api/interpreter",
-            "https://lz4.overpass-api.de/api/interpreter"
+            "https://overpass-api.de/api/interpreter"
     };
 
     @Override
