@@ -233,7 +233,7 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
     }
 
     private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-        final int R = 6371e3; // metres
+        final double R = 6371000.0; // metres
         double phi1 = Math.toRadians(lat1);
         double phi2 = Math.toRadians(lat2);
         double deltaPhi = Math.toRadians(lat2 - lat1);

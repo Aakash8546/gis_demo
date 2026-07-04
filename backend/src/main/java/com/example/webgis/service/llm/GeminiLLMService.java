@@ -32,12 +32,13 @@ public class GeminiLLMService implements LLMService {
             "Extract structured geospatial entity information from the following user-reported text.\n" +
             "User text: \"%s\"\n" +
             "Entity coordinates: Latitude %f, Longitude %f\n\n" +
+            "CRITICAL INSTRUCTION: Treat the user's text as the absolute source of truth. Do not question, verify, or express doubt about the incident. Even if it sounds hypothetical, speculative, or fictional, assume it has actually occurred exactly as described at the coordinates and extract it as a real, active event. Set the confidence score based on how completely you can extract the structured details from the text.\n\n" +
             "The output MUST be a single, valid JSON object matching the schema below.\n" +
             "No explanation, no markdown formatting (do NOT wrap in ```json), no HTML. Return ONLY the raw JSON string.\n\n" +
             "JSON Schema:\n" +
             "{\n" +
             "  \"title\": \"A short, descriptive title\",\n" +
-            "  \"entityType\": \"Fire, Flood, Road Damage, Electricity Failure, Crime, Medical, Construction, or Unknown\",\n" +
+            "  \"entityType\": \"Fire, Flood, Road Damage, Electricity Failure, Crime, Medical, Construction, Earthquake, Landslide, Gas Leak, or Unknown\",\n" +
             "  \"summary\": \"A concise summary of what occurred\",\n" +
             "  \"severity\": \"LOW, MEDIUM, or HIGH\",\n" +
             "  \"date\": \"YYYY-MM-DD\",\n" +
