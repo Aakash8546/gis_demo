@@ -3711,11 +3711,6 @@ out center;`;
                 <Activity className="h-4 w-4 text-cyan-400" />
                 Area Information
               </h2>
-              {spatialFeatures && (
-                <span className="text-[10px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                  Verified Data
-                </span>
-              )}
             </div>
 
             {spatialFeaturesLoading ? (
