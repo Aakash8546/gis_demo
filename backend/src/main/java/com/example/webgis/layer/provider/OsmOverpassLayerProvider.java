@@ -206,26 +206,30 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
 
     private String executeOverpassQuery(String overpassQuery) {
         String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
-        for (String mirror : OVERPASS_MIRRORS) {
-            try {
-                log.info("Querying Overpass mirror: {}", mirror);
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(mirror))
-                        .timeout(Duration.ofSeconds(5))
-                        .header("Content-Type", "application/x-www-form-urlencoded")
-                        .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)")
-                        .POST(HttpRequest.BodyPublishers.ofString(payload))
-                        .build();
+        synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
+            // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
+            try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+            for (String mirror : OVERPASS_MIRRORS) {
+                try {
+                    log.info("Querying Overpass mirror: {}", mirror);
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create(mirror))
+                            .timeout(Duration.ofSeconds(10))
+                            .header("Content-Type", "application/x-www-form-urlencoded")
+                            .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)")
+                            .POST(HttpRequest.BodyPublishers.ofString(payload))
+                            .build();
 
-                HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-                if (response.statusCode() == 200) {
-                    byte[] bytes = response.body();
-                    return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
-                } else {
-                    log.warn("Overpass mirror failed: {} with status: {}", mirror, response.statusCode());
+                    HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                    if (response.statusCode() == 200) {
+                        byte[] bytes = response.body();
+                        return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
+                    } else {
+                        log.warn("Overpass mirror failed: {} with status: {}", mirror, response.statusCode());
+                    }
+                } catch (Exception e) {
+                    log.warn("Overpass mirror failed: {} due to: {}", mirror, e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("Overpass mirror failed: {} due to: {}", mirror, e.getMessage());
             }
         }
         return null;

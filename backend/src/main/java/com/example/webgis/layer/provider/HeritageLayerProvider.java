@@ -239,12 +239,15 @@ public class HeritageLayerProvider implements GisLayerProvider {
         headers.set("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)");
         HttpEntity<String> request = new HttpEntity<>(payload, headers);
 
-        for (String mirror : OVERPASS_MIRRORS) {
+        synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
+            try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+            for (String mirror : OVERPASS_MIRRORS) {
             try {
                 return restTemplate.postForObject(mirror, request, String.class);
             } catch (Exception e) {
                 log.warn("Overpass mirror failed: {}", mirror);
             }
+        }
         }
         return null;
     }
