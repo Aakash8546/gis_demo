@@ -33,7 +33,7 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
 
     public CommercialPoiLayerProvider() {
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(2))
+                .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
 

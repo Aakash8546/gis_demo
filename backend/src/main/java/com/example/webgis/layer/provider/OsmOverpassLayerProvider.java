@@ -33,7 +33,7 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
 
     public OsmOverpassLayerProvider() {
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(2))
+                .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
 

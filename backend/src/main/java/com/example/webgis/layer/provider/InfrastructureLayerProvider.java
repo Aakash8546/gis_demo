@@ -33,7 +33,7 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
 
     public InfrastructureLayerProvider() {
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(2))
+                .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
 

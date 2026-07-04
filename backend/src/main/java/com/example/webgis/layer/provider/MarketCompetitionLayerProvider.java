@@ -33,7 +33,7 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
 
     public MarketCompetitionLayerProvider() {
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(2))
+                .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
 
