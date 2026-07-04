@@ -2880,7 +2880,7 @@ out center;`;
             }`}
           >
             <Activity className="h-4 w-4" />
-            <span>Location Audit</span>
+            <span>Feature Vector</span>
           </button>
           <button
             type="button"
