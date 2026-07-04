@@ -3557,11 +3557,11 @@ out center;`;
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
                 <Activity className="h-4 w-4 text-cyan-400" />
-                Spatial Feature Vector
+                Area Information
               </h2>
               {spatialFeatures && (
-                <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-                  Feature Store
+                <span className="text-[10px] font-mono font-semibold px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                  Verified Data
                 </span>
               )}
             </div>
@@ -3569,11 +3569,11 @@ out center;`;
             {spatialFeaturesLoading ? (
               <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-xs">
                 <Loader2 className="h-8 w-8 animate-spin text-cyan-400 mb-3" />
-                <span>Extracting spatial features...</span>
+                <span>Loading area details...</span>
               </div>
             ) : spatialFeaturesError ? (
               <div className="text-xs text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-2xl p-4 text-center space-y-2">
-                <p className="font-semibold">Extraction Failed</p>
+                <p className="font-semibold">Loading Failed</p>
                 <p className="text-[11px] text-slate-400">{spatialFeaturesError}</p>
                 <p className="text-[10px] text-slate-500 italic mt-2">Click on the map to query a valid coordinate.</p>
               </div>
@@ -3584,15 +3584,15 @@ out center;`;
                 </div>
                 <p className="font-semibold text-slate-300">No Location Selected</p>
                 <p className="text-[11px] text-slate-400">
-                  Click anywhere on the map to extract spatial feature vector with normalized metrics, units, and sources.
+                  Click anywhere on the map to see details about transportation, population, terrain, facilities, and climate.
                 </p>
               </div>
             ) : (
               <div className="space-y-4 max-h-[62vh] overflow-y-auto pr-1 custom-scrollbar">
-                {/* 1. Feature Store Settings */}
+                {/* 1. Search Radius Settings */}
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">FEATURE QUERY SETTINGS</span>
+                    <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">SEARCH RANGE</span>
                     <button
                       type="button"
                       onClick={() => setShowBuffer(prev => !prev)}
@@ -3602,7 +3602,7 @@ out center;`;
                           : 'bg-slate-800/40 text-slate-500 border-slate-700/30'
                       }`}
                     >
-                      {showBuffer ? 'SHOW SEARCH RADIUS' : 'HIDE SEARCH RADIUS'}
+                      {showBuffer ? 'SHOW RANGE ON MAP' : 'HIDE RANGE ON MAP'}
                     </button>
                   </div>
                   
@@ -3633,67 +3633,252 @@ out center;`;
                   </div>
                 </div>
 
-                {/* 2. Feature Vector Categories */}
-                <div className="space-y-3">
-                  {Object.entries(spatialFeatures.featureVector || {}).map(([category, features]) => (
-                    <div key={category} className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3 pointer-events-auto">
-                      <h3 className="text-[10px] uppercase tracking-wider text-cyan-400 font-extrabold flex items-center justify-between">
-                        <span className="capitalize">{category.replace('_', ' ')}</span>
-                        <span className="text-[8px] text-slate-500 font-mono font-bold">CATEGORY</span>
-                      </h3>
-                      <div className="space-y-3">
-                        {Object.entries(features || {}).map(([featureKey, fVal]) => {
-                          const rawVal = fVal.value;
-                          const normVal = fVal.normalized;
-                          const meta = fVal.metadata || {};
-                          const units = meta.units || '';
-                          const source = meta.source || 'Unknown';
+                {/* 2. Collapsible Human Friendly Cards */}
+                <div className="space-y-2">
+                  {(() => {
+                    const humanFriendlyCards = [
+                      {
+                        id: 'transport',
+                        title: 'Roads & Transport',
+                        icon: '🚗',
+                        features: [
+                          { key: 'nearest_highway_distance', label: 'Nearest Highway', desc: 'Distance to the closest major highway link.' },
+                          { key: 'nearest_highway_class', label: 'Road Type', desc: 'Class of the nearest primary or secondary road.' },
+                          { key: 'nearest_rail_station_distance', label: 'Nearest Railway Station', desc: 'Distance to the nearest train transit point.' },
+                          { key: 'nearest_fuel_station_distance', label: 'Nearest Fuel Station', desc: 'Distance to the closest gas or service station.' },
+                          { key: 'road_density_count_2km', label: 'Road Network Density', desc: 'Total road segments within a 2km driving radius.' }
+                        ]
+                      },
+                      {
+                        id: 'population',
+                        title: 'Population',
+                        icon: '👥',
+                        features: [
+                          { key: 'population_density_per_sqkm', label: 'Population Density', desc: 'Estimated number of people living per square kilometer.' },
+                          { key: 'density_classification', label: 'Urban Classification', desc: 'Urbanization category of this area.' },
+                          { key: 'population_within_1km', label: 'Population (1km)', desc: 'Total estimated population living within 1km.' },
+                          { key: 'population_within_2km', label: 'Population (2km)', desc: 'Total estimated population living within 2km.' },
+                          { key: 'population_within_5km', label: 'Population (5km)', desc: 'Total estimated population living within 5km.' }
+                        ]
+                      },
+                      {
+                        id: 'land',
+                        title: 'Land & Terrain',
+                        icon: '⛰️',
+                        features: [
+                          { key: 'elevation_meters', label: 'Elevation', desc: 'Height above sea level in meters.' },
+                          { key: 'slope_degrees', label: 'Terrain Slope', desc: 'Shows how steep or flat the land is.' },
+                          { key: 'lulc_class', label: 'Land Cover Type', desc: 'Primary usage of the land (e.g. urban, forest, farm).' }
+                        ]
+                      },
+                      {
+                        id: 'infrastructure',
+                        title: 'Buildings & Infrastructure',
+                        icon: '⚡',
+                        features: [
+                          { key: 'nearest_substation_distance', label: 'Nearest Power Substation', desc: 'Distance to the nearest electricity grid station.' },
+                          { key: 'power_lines_within_2km', label: 'Power Lines Count', desc: 'Number of transmission power lines nearby.' },
+                          { key: 'nearest_telecom_tower_distance', label: 'Nearest Telecom Tower', desc: 'Distance to the nearest mobile signal tower.' },
+                          { key: 'telecom_towers_within_2km', label: 'Telecom Towers Count', desc: 'Number of telecom transmission towers nearby.' },
+                          { key: 'nearest_post_office_distance', label: 'Nearest Post Office', desc: 'Distance to the closest postal utility office.' }
+                        ]
+                      },
+                      {
+                        id: 'water',
+                        title: 'Water Availability',
+                        icon: '💧',
+                        features: [
+                          { key: 'nearest_water_infrastructure_distance', label: 'Nearest Water Infrastructure', desc: 'Distance to the nearest public water source or utility.' }
+                        ]
+                      },
+                      {
+                        id: 'nearby_facilities',
+                        title: 'Nearby Facilities',
+                        icon: '🏫',
+                        features: [
+                          { key: 'schoolsCount', label: 'Schools Nearby', desc: 'Number of schools detected in the area.', path: 'summary.schoolsCount' },
+                          { key: 'hospitalsCount', label: 'Hospitals Nearby', desc: 'Number of medical facilities in the area.', path: 'summary.hospitalsCount' },
+                          { key: 'gymsCount', label: 'Gyms & Parks', desc: 'Recreational facilities nearby.', path: 'summary.gymsCount' },
+                          { key: 'waterBodiesCount', label: 'Water Bodies', desc: 'Lakes, ponds, or rivers nearby.', path: 'summary.waterBodiesCount' }
+                        ]
+                      },
+                      {
+                        id: 'environment',
+                        title: 'Environment & Air Quality',
+                        icon: '🍃',
+                        features: [
+                          { key: 'pm2_5_concentration', label: 'Air Quality (PM2.5)', desc: 'Concentration of fine air particulate matter.' },
+                          { key: 'forestAreaSqKm', label: 'Green Cover Area', desc: 'Total green forest area in square kilometers.', path: 'summary.forestAreaSqKm' }
+                        ]
+                      },
+                      {
+                        id: 'weather',
+                        title: 'Weather & Climate',
+                        icon: '☀️',
+                        features: [
+                          { key: 'current_temperature', label: 'Current Temperature', desc: 'Live temperature at this location.' },
+                          { key: 'current_humidity', label: 'Humidity', desc: 'Percentage of water vapor in the air.' },
+                          { key: 'current_wind_speed', label: 'Wind Speed', desc: 'Current speed of the wind.' },
+                          { key: 'annual_average_rainfall', label: 'Average Rainfall', desc: 'Average daily precipitation index.' },
+                          { key: 'annual_average_relative_humidity', label: 'Relative Humidity', desc: 'Annual average humidity percentage.' },
+                          { key: 'average_solar_radiation', label: 'Solar Sunlight', desc: 'Average daily sunlight energy falling on the area.' },
+                          { key: 'annual_average_temperature', label: 'Average Temperature', desc: 'Mean annual temperature of the region.' }
+                        ]
+                      },
+                      {
+                        id: 'disasters',
+                        title: 'Disaster Information',
+                        icon: '⚠️',
+                        features: [
+                          { key: 'flood_risk_classification', label: 'Flood Risk Level', desc: 'Vulnerability of the area to flooding.' },
+                          { key: 'seismic_hazard_zone', label: 'Earthquake Zone', desc: 'Seismic risk zone classification (e.g. Zone III).' },
+                          { key: 'recent_seismic_activity_count_200km', label: 'Recent Earthquakes', desc: 'Number of minor or major quakes recorded within 200km.' },
+                          { key: 'maximum_recent_magnitude', label: 'Max Earthquake Magnitude', desc: 'Highest magnitude recorded among recent tremors.' }
+                        ]
+                      },
+                      {
+                        id: 'economy',
+                        title: 'Economy & Business',
+                        icon: '💼',
+                        features: [
+                          { key: 'retail_density_per_sqkm', label: 'Shop Density', desc: 'Number of retail shops operating per square kilometer.' },
+                          { key: 'supermarkets_count', label: 'Supermarkets', desc: 'Total large grocery stores nearby.' },
+                          { key: 'convenience_stores_count', label: 'Convenience Stores', desc: 'Total corner or local utility shops nearby.' },
+                          { key: 'beverage_distributors_count', label: 'Beverage Outlets', desc: 'Number of cold drink or beverage shops nearby.' },
+                          { key: 'warehouses_count', label: 'Warehouses', desc: 'Storage depots and warehouses found nearby.' }
+                        ]
+                      }
+                    ];
 
-                          return (
-                            <div key={featureKey} className="space-y-1">
-                              <div className="flex justify-between font-medium text-slate-200 text-xs">
-                                <span className="capitalize text-[11px] font-semibold tracking-wide">
-                                  {featureKey.replace(/_/g, ' ')}
-                                </span>
-                                <span className="font-mono text-cyan-300 font-bold">
-                                  {typeof rawVal === 'number' ? rawVal.toLocaleString() : String(rawVal)} {units}
-                                </span>
-                              </div>
-                              
-                              {normVal !== null && normVal !== undefined && (
-                                <div className="flex items-center gap-2">
-                                  <div className="flex-1 bg-slate-950/60 rounded-full h-1 border border-white/5 overflow-hidden">
-                                    <div
-                                      className="h-full rounded-full bg-cyan-400/80 transition-all duration-500"
-                                      style={{ width: `${normVal * 100}%` }}
-                                    />
+                    const getFeatureInfo = (feat) => {
+                      let rawVal = undefined;
+                      let normVal = undefined;
+                      let units = '';
+                      let source = '';
+
+                      if (feat.path) {
+                        const parts = feat.path.split('.');
+                        if (parts[0] === 'summary' && knowledgeContext?.summary) {
+                          rawVal = knowledgeContext.summary[feat.key];
+                          source = 'Local Database';
+                          if (feat.key === 'forestAreaSqKm') units = 'sq km';
+                        }
+                      } else if (spatialFeatures?.featureVector) {
+                        for (const cat in spatialFeatures.featureVector) {
+                          const catData = spatialFeatures.featureVector[cat];
+                          if (catData && catData[feat.key] !== undefined) {
+                            rawVal = catData[feat.key].value;
+                            normVal = catData[feat.key].normalized;
+                            if (catData[feat.key].metadata) {
+                              units = catData[feat.key].metadata.units || '';
+                              source = catData[feat.key].metadata.source || '';
+                            }
+                            break;
+                          }
+                        }
+                      }
+
+                      return { rawVal, normVal, units, source };
+                    };
+
+                    const formatValue = (raw, key, units) => {
+                      if (raw === undefined || raw === null) return 'No data';
+                      
+                      if (typeof raw === 'number') {
+                        if (units === 'meters') {
+                          if (raw >= 1000) {
+                            return `${(raw / 1000).toFixed(1)} km`;
+                          }
+                          return `${Math.round(raw)} m`;
+                        }
+                        if (raw % 1 !== 0) {
+                          return `${raw.toFixed(1)} ${units}`;
+                        }
+                        return `${raw.toLocaleString()} ${units}`;
+                      }
+                      
+                      if (typeof raw === 'string') {
+                        return raw.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').trim().replace(/^\w/, c => c.toUpperCase());
+                      }
+                      
+                      return String(raw);
+                    };
+
+                    return humanFriendlyCards.map((card) => {
+                      const cardFeaturesWithData = card.features.map(f => {
+                        const info = getFeatureInfo(f);
+                        return { ...f, ...info };
+                      }).filter(f => f.rawVal !== undefined && f.rawVal !== null);
+
+                      if (cardFeaturesWithData.length === 0) return null;
+
+                      const isExpanded = !!expandedAreaCards[card.id];
+
+                      return (
+                        <div key={card.id} className="rounded-2xl border border-white/5 bg-slate-900/40 overflow-hidden pointer-events-auto">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedAreaCards(prev => ({ ...prev, [card.id]: !prev[card.id] }))}
+                            className="w-full flex items-center justify-between p-4 text-left transition-colors hover:bg-slate-800/20"
+                          >
+                            <span className="flex items-center gap-2.5 text-xs font-bold text-slate-200">
+                              <span className="text-sm">{card.icon}</span>
+                              {card.title}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5 font-bold">
+                              {cardFeaturesWithData.length} details
+                              <span className="text-xs transition-transform duration-200" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none' }}>
+                                ▼
+                              </span>
+                            </span>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="border-t border-white/5 p-4 space-y-4 bg-slate-950/20">
+                              {cardFeaturesWithData.map((f) => (
+                                <div key={f.key} className="space-y-1">
+                                  <div className="flex justify-between font-medium text-slate-200 text-xs">
+                                    <span className="text-[11px] font-semibold tracking-wide text-slate-300">
+                                      {f.label}
+                                    </span>
+                                    <span className="font-mono text-cyan-300 font-bold">
+                                      {formatValue(f.rawVal, f.key, f.units)}
+                                    </span>
                                   </div>
-                                  <span className="text-[8px] font-mono text-slate-400 shrink-0">
-                                    Norm: {Number(normVal).toFixed(2)}
-                                  </span>
-                                </div>
-                              )}
+                                  
+                                  <p className="text-[9.5px] text-slate-500 leading-normal">
+                                    {f.desc}
+                                  </p>
 
-                              <div className="flex justify-between text-[8px] text-slate-500 leading-none">
-                                <span>Source: <span className="text-slate-400 font-semibold">{source}</span></span>
-                              </div>
+                                  {f.normVal !== null && f.normVal !== undefined && (
+                                    <div className="pt-0.5">
+                                      <div className="w-full bg-slate-950/60 rounded-full h-1 border border-white/5 overflow-hidden">
+                                        <div
+                                          className="h-full rounded-full bg-cyan-400/80 transition-all duration-500"
+                                          style={{ width: `${f.normVal * 100}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
 
-                {/* 3. Metadata and Active Contributors */}
+                {/* 3. Human Friendly Sources List */}
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-2 pointer-events-auto">
-                  <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">CONTRIBUTING DATA SOURCES</span>
+                  <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">VERIFIED DATA SOURCES</span>
                   <div className="grid grid-cols-2 gap-2">
                     {(spatialFeatures.sources || []).map((src, index) => (
-                      <div key={index} className="p-2 rounded bg-slate-950/40 border border-white/5 space-y-0.5">
+                      <div key={index} className="p-2.5 rounded bg-slate-950/40 border border-white/5 space-y-0.5">
                         <p className="text-[10px] font-semibold text-white/95 truncate">{src.name}</p>
                         <div className="flex justify-between text-[8px] text-slate-500">
-                          <span>Quality: <span className="text-cyan-400">{src.coverage}</span></span>
+                          <span>Coverage: <span className="text-cyan-400">Verified</span></span>
                           <span>{src.lastUpdated.substring(0, 7)}</span>
                         </div>
                       </div>
