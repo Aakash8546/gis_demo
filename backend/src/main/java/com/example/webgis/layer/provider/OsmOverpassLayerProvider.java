@@ -215,7 +215,7 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
                         .uri(URI.create(mirror))
                         .timeout(Duration.ofSeconds(5))
                         .header("Content-Type", "application/x-www-form-urlencoded")
-                        .header("User-Agent", "WebGIS-Production-App/1.0 (aakash.sri@example.com)")
+                        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/115.0")
                         .POST(HttpRequest.BodyPublishers.ofString(payload))
                         .build();
 

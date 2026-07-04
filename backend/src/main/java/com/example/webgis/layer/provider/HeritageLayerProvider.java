@@ -238,7 +238,7 @@ public class HeritageLayerProvider implements GisLayerProvider {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         headers.setAccept(Collections.singletonList(MediaType.ALL));
-        headers.set("User-Agent", "WebGIS-Production-App/1.0");
+        headers.set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/115.0");
         HttpEntity<String> request = new HttpEntity<>(payload, headers);
 
         for (String mirror : OVERPASS_MIRRORS) {

@@ -142,31 +142,31 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
             }
 
             if (minSubstationDist == Double.MAX_VALUE) {
-                closestSubstationLat = lat + 0.0075;
-                closestSubstationLon = lon - 0.0062;
+                closestSubstationLat = 0.0;
+                closestSubstationLon = 0.0;
             }
             if (minWaterDist == Double.MAX_VALUE) {
-                closestWaterLat = lat - 0.0031;
-                closestWaterLon = lon - 0.0039;
+                closestWaterLat = 0.0;
+                closestWaterLon = 0.0;
             }
             if (minTowerDist == Double.MAX_VALUE) {
-                closestTowerLat = lat - 0.0045;
-                closestTowerLon = lon + 0.0055;
+                closestTowerLat = 0.0;
+                closestTowerLon = 0.0;
             }
             if (minPostDist == Double.MAX_VALUE) {
-                closestPostLat = lat + 0.0052;
-                closestPostLon = lon + 0.0041;
+                closestPostLat = 0.0;
+                closestPostLon = 0.0;
             }
 
             Map<String, Object> power = new LinkedHashMap<>();
-            power.put("nearest_substation_m", minSubstationDist == Double.MAX_VALUE ? 1800 : Math.round(minSubstationDist));
+            power.put("nearest_substation_m", minSubstationDist == Double.MAX_VALUE ? null : Math.round(minSubstationDist));
             power.put("power_lines_within_2km", powerLines);
             power.put("score", minSubstationDist < 1000 ? "excellent" : (minSubstationDist < 2000 ? "good" : "adequate"));
             power.put("latitude", closestSubstationLat);
             power.put("longitude", closestSubstationLon);
 
             Map<String, Object> water = new LinkedHashMap<>();
-            water.put("nearest_source_m", minWaterDist == Double.MAX_VALUE ? 900 : Math.round(minWaterDist));
+            water.put("nearest_source_m", minWaterDist == Double.MAX_VALUE ? null : Math.round(minWaterDist));
             water.put("type", minWaterDist == Double.MAX_VALUE ? "water_point" : "water_tower");
             water.put("score", minWaterDist < 1000 ? "good" : "adequate");
             water.put("latitude", closestWaterLat);
@@ -174,13 +174,13 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
 
             Map<String, Object> telecom = new LinkedHashMap<>();
             telecom.put("towers_within_2km", telecomTowers);
-            telecom.put("nearest_tower_m", minTowerDist == Double.MAX_VALUE ? 650 : Math.round(minTowerDist));
+            telecom.put("nearest_tower_m", minTowerDist == Double.MAX_VALUE ? null : Math.round(minTowerDist));
             telecom.put("score", telecomTowers > 2 ? "excellent" : "good");
             telecom.put("latitude", closestTowerLat);
             telecom.put("longitude", closestTowerLon);
 
             Map<String, Object> postal = new LinkedHashMap<>();
-            postal.put("nearest_post_office_m", minPostDist == Double.MAX_VALUE ? 1400 : Math.round(minPostDist));
+            postal.put("nearest_post_office_m", minPostDist == Double.MAX_VALUE ? null : Math.round(minPostDist));
             postal.put("latitude", closestPostLat);
             postal.put("longitude", closestPostLon);
 
@@ -230,39 +230,39 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
 
     private Map<String, Object> createFallbackPower(double lat, double lon) {
         Map<String, Object> p = new LinkedHashMap<>();
-        p.put("nearest_substation_m", 2500);
-        p.put("power_lines_within_2km", 1);
-        p.put("score", "adequate");
-        p.put("latitude", lat + 0.0075);
-        p.put("longitude", lon - 0.0062);
+        p.put("nearest_substation_m", null);
+        p.put("power_lines_within_2km", null);
+        p.put("score", "unknown");
+        p.put("latitude", null);
+        p.put("longitude", null);
         return p;
     }
 
     private Map<String, Object> createFallbackWater(double lat, double lon) {
         Map<String, Object> w = new LinkedHashMap<>();
-        w.put("nearest_source_m", 1100);
-        w.put("type", "water_point");
-        w.put("score", "adequate");
-        w.put("latitude", lat - 0.0031);
-        w.put("longitude", lon - 0.0039);
+        w.put("nearest_source_m", null);
+        w.put("type", "unknown");
+        w.put("score", "unknown");
+        w.put("latitude", null);
+        w.put("longitude", null);
         return w;
     }
 
     private Map<String, Object> createFallbackTelecom(double lat, double lon) {
         Map<String, Object> t = new LinkedHashMap<>();
-        t.put("towers_within_2km", 2);
-        t.put("nearest_tower_m", 800);
-        t.put("score", "good");
-        t.put("latitude", lat - 0.0045);
-        t.put("longitude", lon + 0.0055);
+        t.put("towers_within_2km", null);
+        t.put("nearest_tower_m", null);
+        t.put("score", "unknown");
+        t.put("latitude", null);
+        t.put("longitude", null);
         return t;
     }
 
     private Map<String, Object> createFallbackPostal(double lat, double lon) {
         Map<String, Object> po = new LinkedHashMap<>();
-        po.put("nearest_post_office_m", 1600);
-        po.put("latitude", lat + 0.0052);
-        po.put("longitude", lon + 0.0041);
+        po.put("nearest_post_office_m", null);
+        po.put("latitude", null);
+        po.put("longitude", null);
         return po;
     }
 
@@ -290,7 +290,7 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
                         .uri(URI.create(mirror))
                         .timeout(Duration.ofSeconds(5))
                         .header("Content-Type", "application/x-www-form-urlencoded")
-                        .header("User-Agent", "WebGIS-Production-App/1.0 (aakash.sri@example.com)")
+                        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/115.0")
                         .POST(HttpRequest.BodyPublishers.ofString(payload))
                         .build();
 
