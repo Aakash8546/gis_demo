@@ -106,7 +106,7 @@ export function analyzeSelectedArea({ polygonFeature, layers, intelEntities }) {
     layerCounts[layer.id] = count;
   });
 
-  // INTEGRATE ACTIVE AI INTEL ENTITIES
+  // INTEGRATE LOGGED INCIDENTS
   if (intelEntities && intelEntities.length > 0) {
     let count = 0;
     intelEntities.forEach((entity) => {
@@ -115,7 +115,7 @@ export function analyzeSelectedArea({ polygonFeature, layers, intelEntities }) {
         count += 1;
         featuresInside.push({
           layerId: 'ai-intel',
-          layerName: 'AI Intel Layer',
+          layerName: 'Incident Layer',
           name: `[${entity.extractedData.entityType}] ${entity.extractedData.title}`,
           geometryType: 'Point'
         });

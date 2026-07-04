@@ -36,6 +36,7 @@ import {
   MapPin,
   Navigation,
   Brain,
+  ClipboardList,
   PencilLine,
   Plus,
   Trash2,
@@ -754,6 +755,9 @@ function App() {
   const [knowledgeContext, setKnowledgeContext] = useState(null);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeError, setKnowledgeError] = useState(null);
+  const [siteAssessment, setSiteAssessment] = useState(null);
+  const [siteAssessmentLoading, setSiteAssessmentLoading] = useState(false);
+  const [siteAssessmentError, setSiteAssessmentError] = useState(null);
   const [knowledgeRadius, setKnowledgeRadius] = useState(2000); // default 2km (in meters)
   const [showBuffer, setShowBuffer] = useState(true);
   const [showKgVisualizer, setShowKgVisualizer] = useState(false);
@@ -1308,18 +1312,45 @@ out center;`;
     const radiusToUse = customRadius !== undefined ? customRadius : knowledgeRadius;
     setKnowledgeLoading(true);
     setKnowledgeError(null);
+    setSiteAssessmentLoading(true);
+    setSiteAssessmentError(null);
+    
     try {
-      const response = await fetch(`/api/knowledge/context?lat=${lat}&lon=${lon}&radius=${radiusToUse}`);
-      if (!response.ok) {
-        throw new Error(`Failed to load knowledge context: ${response.status}`);
+      const [knowledgeRes, assessmentRes] = await Promise.all([
+        fetch(`/api/knowledge/context?lat=${lat}&lon=${lon}&radius=${radiusToUse}`),
+        fetch('/api/assessment/site', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            latitude: lat,
+            longitude: lon,
+            radius: radiusToUse,
+            businessType: 'distribution_center'
+          })
+        })
+      ]);
+
+      if (!knowledgeRes.ok) {
+        throw new Error(`Failed to load knowledge context: ${knowledgeRes.status}`);
       }
-      const data = await response.json();
-      setKnowledgeContext(data);
+      if (!assessmentRes.ok) {
+        throw new Error(`Failed to load site assessment: ${assessmentRes.status}`);
+      }
+
+      const [knowledgeData, assessmentData] = await Promise.all([
+        knowledgeRes.json(),
+        assessmentRes.json()
+      ]);
+
+      setKnowledgeContext(knowledgeData);
+      setSiteAssessment(assessmentData);
     } catch (err) {
-      console.error('Error loading knowledge context:', err);
+      console.error('Error loading context/assessment:', err);
       setKnowledgeError(err.message || 'Failed to connect to GIS Knowledge service.');
+      setSiteAssessmentError(err.message || 'Failed to load site assessment.');
     } finally {
       setKnowledgeLoading(false);
+      setSiteAssessmentLoading(false);
     }
   }, [knowledgeRadius]);
 
@@ -1533,6 +1564,58 @@ out center;`;
       recs.push({
         type: isHigh ? 'danger' : 'warning',
         text: `⚡ Utility / Safety Alert (Alert): "${utilityAlerts[0].extractedData.title}". ${utilityAlerts[0].extractedData.summary}`,
+        category: 'Hospital'
+      });
+    }
+
+    // Seismic / Earthquake safety alerts integration
+    const earthquakeAlerts = nearbyIntel.filter(e =>
+      e.extractedData.entityType?.toLowerCase().includes('earthquake')
+    );
+    if (earthquakeAlerts.length > 0) {
+      score -= 25;
+      recs.push({
+        type: 'danger',
+        text: `⚠️ Seismic Alert (Alert): "${earthquakeAlerts[0].extractedData.title}". ${earthquakeAlerts[0].extractedData.summary}`,
+        category: 'Hospital'
+      });
+    }
+
+    // Fire incident alerts integration
+    const fireAlerts = nearbyIntel.filter(e =>
+      e.extractedData.entityType?.toLowerCase().includes('fire')
+    );
+    if (fireAlerts.length > 0) {
+      score -= 25;
+      recs.push({
+        type: 'danger',
+        text: `🔥 Fire Alert (Alert): "${fireAlerts[0].extractedData.title}". ${fireAlerts[0].extractedData.summary}`,
+        category: 'Hospital'
+      });
+    }
+
+    // Landslide safety alerts integration
+    const landslideAlerts = nearbyIntel.filter(e =>
+      e.extractedData.entityType?.toLowerCase().includes('landslide')
+    );
+    if (landslideAlerts.length > 0) {
+      score -= 25;
+      recs.push({
+        type: 'danger',
+        text: `🪨 Landslide Alert (Alert): "${landslideAlerts[0].extractedData.title}". ${landslideAlerts[0].extractedData.summary}`,
+        category: 'Road'
+      });
+    }
+
+    // Gas Leak / Industrial hazard alerts integration
+    const hazardAlerts = nearbyIntel.filter(e =>
+      e.extractedData.entityType?.toLowerCase().includes('gas leak')
+    );
+    if (hazardAlerts.length > 0) {
+      score -= 30;
+      recs.push({
+        type: 'danger',
+        text: `☣️ Chemical / Gas Hazard (Alert): "${hazardAlerts[0].extractedData.title}". ${hazardAlerts[0].extractedData.summary}`,
         category: 'Hospital'
       });
     }
@@ -2066,6 +2149,9 @@ out center;`;
       'crime': { color: '#a855f7', label: '🚨' },
       'medical': { color: '#10b981', label: '🏥' },
       'construction': { color: '#f59e0b', label: '🏗️' },
+      'earthquake': { color: '#ef4444', label: '🌋' },
+      'landslide': { color: '#854d0e', label: '🪨' },
+      'gas leak': { color: '#a855f7', label: '☣️' },
       'unknown': { color: '#64748b', label: '📍' }
     };
 
@@ -2220,7 +2306,7 @@ out center;`;
       map.forEachFeatureAtPixel(event.pixel, (feature, layer) => {
         if (!hitIntel && layer === intelLayerRef.current) hitIntel = feature;
       });
-      if (hitIntel) {
+      if (hitIntel && activeSidebarTab !== 'layers') {
         const entityId = hitIntel.get('entityId');
         const entity = intelEntitiesRef.current.find(e => e.id === entityId);
         if (entity) {
@@ -2260,33 +2346,57 @@ out center;`;
         return;
       }
 
-      const hit = map.forEachFeatureAtPixel(event.pixel, (feature, layer) => ({
-        feature,
-        layer
-      }));
-
-      if (hit?.feature && hit?.layer?.get('kind') === 'data') {
-        const geom = hit.feature.getGeometry();
-        if (geom && (geom.getType() === 'Point' || geom.getType() === 'MultiPoint')) {
-          const props = hit.feature.getProperties();
-          const name = props.name || props.title || props.label || 'Unnamed Marker';
-          const layerName = props.category || props.__layerName || 'Unknown Layer';
-          const coords = toLonLat(geom.getCoordinates());
-          const markerId = hit.feature.getId() || `${coords[0]}-${coords[1]}`;
-
-          setSelectedMarkersForDistance((current) => {
-            const exists = current.find(m => m.id === markerId);
-            if (exists) return current.filter(m => m.id !== markerId);
-            if (current.length >= 2) return [{ id: markerId, name, layerName, coordinates: coords }];
-            return [...current, { id: markerId, name, layerName, coordinates: coords }];
-          });
-          selectedPointSourceRef.current.clear();
-          highlightSourceRef.current.clear();
-          return;
+      // Find if we hit a Point feature on a data or incident layer at the clicked pixel
+      let hitMarkerFeature = null;
+      let hitMarkerLayer = null;
+      map.forEachFeatureAtPixel(event.pixel, (feature, layer) => {
+        if (hitMarkerFeature) return;
+        if (layer) {
+          const kind = layer.get('kind');
+          const geom = feature.getGeometry();
+          const isPoint = geom && (geom.getType() === 'Point' || geom.getType() === 'MultiPoint');
+          if (isPoint && (kind === 'data' || layer === intelLayerRef.current)) {
+            hitMarkerFeature = feature;
+            hitMarkerLayer = layer;
+          }
         }
+      });
 
+      if (hitMarkerFeature && hitMarkerLayer) {
+        const geom = hitMarkerFeature.getGeometry();
+        const props = hitMarkerFeature.getProperties();
+        const isIntel = hitMarkerLayer === intelLayerRef.current;
+        const name = isIntel 
+          ? (props.title || 'Incident') 
+          : (props.name || props.title || props.label || 'Unnamed Marker');
+        const layerName = isIntel 
+          ? 'Incident Pinboard' 
+          : (props.category || props.__layerName || 'Unknown Layer');
+        const coords = toLonLat(geom.getCoordinates());
+        const markerId = hitMarkerFeature.getId() || `${coords[0]}-${coords[1]}`;
+
+        setSelectedMarkersForDistance((current) => {
+          const exists = current.find(m => m.id === markerId);
+          if (exists) return current.filter(m => m.id !== markerId);
+          if (current.length >= 2) return [{ id: markerId, name, layerName, coordinates: coords }];
+          return [...current, { id: markerId, name, layerName, coordinates: coords }];
+        });
+        selectedPointSourceRef.current.clear();
         highlightSourceRef.current.clear();
-        const cloned = hit.feature.clone();
+        return;
+      }
+
+      // If we didn't hit a marker point, check if we hit any general feature to highlight
+      let hitGeneralFeature = null;
+      map.forEachFeatureAtPixel(event.pixel, (feature, layer) => {
+        if (!hitGeneralFeature && layer && layer.get('kind') === 'data') {
+          hitGeneralFeature = feature;
+        }
+      });
+
+      if (hitGeneralFeature) {
+        highlightSourceRef.current.clear();
+        const cloned = hitGeneralFeature.clone();
         highlightSourceRef.current.addFeature(cloned);
       } else {
         const featureOnDraw = map.forEachFeatureAtPixel(event.pixel, (feature, layer) => (layer?.get('kind') === 'draw' ? feature : null));
@@ -2722,7 +2832,7 @@ out center;`;
       setSelectedIntelEntity(newEntity);
       setIntelDialogOpen(false);
       setIntelDraft({ latitude: null, longitude: null, text: '' });
-      showStatus(`Extracted entity: ${newEntity.extractedData.title}`);
+      showStatus(`Logged incident: ${newEntity.extractedData.title}`);
       
       // Auto-focus the map on the new entity
       if (mapRef.current) {
@@ -2970,7 +3080,7 @@ out center;`;
               setActiveSidebarTab('intel');
               setMarkerModeEnabled(false);
               setDrawMode('None');
-              showStatus('Click anywhere on the map to add an AI Location Entity.');
+              showStatus('Click anywhere on the map to pin an incident report.');
             }}
             className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
               activeSidebarTab === 'intel'
@@ -2978,8 +3088,8 @@ out center;`;
                 : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
             }`}
           >
-            <Brain className="h-4 w-4" />
-            <span>AI Reports</span>
+            <ClipboardList className="h-4 w-4" />
+            <span>Pin Reports</span>
           </button>
         </div>
 
@@ -3334,7 +3444,7 @@ out center;`;
                       return (
                         <div className="rounded-xl border border-cyan-500/20 bg-slate-900/50 px-3.5 py-3 text-xs text-slate-300 space-y-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-[9px] uppercase tracking-[0.15em] text-cyan-400 font-bold">🧠 AI Intel Inside ({entitiesInside.length})</p>
+                            <p className="text-[9px] uppercase tracking-[0.15em] text-cyan-400 font-bold">📍 Active Reports Inside ({entitiesInside.length})</p>
                           </div>
                           <div className="space-y-1.5 max-h-[12vh] overflow-y-auto pr-1 custom-scrollbar">
                             {entitiesInside.map(entity => (
@@ -4834,7 +4944,7 @@ out center;`;
                     <div className="rounded-2xl border border-cyan-500/20 bg-slate-900/40 p-4 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-[9px] uppercase tracking-wider text-cyan-400 font-bold block">
-                          🧠 AI INTEL ALERTS ({nearby.length} NEARBY)
+                          📍 INCIDENT ALERTS ({nearby.length} NEARBY)
                         </span>
                         <span className="text-[9px] px-2 py-0.5 rounded-full bg-slate-950/60 border border-white/5 text-slate-400 font-mono">
                           {(knowledgeRadius/1000).toFixed(1)} km radius
@@ -4880,8 +4990,8 @@ out center;`;
           <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-4 pointer-events-auto">
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-                <Brain className="h-4 w-4 text-cyan-400" />
-                AI Incident Reports
+                <ClipboardList className="h-4 w-4 text-cyan-400" />
+                Incident Reports
               </h2>
               {intelEntities.length > 0 && (
                 <button
@@ -4896,11 +5006,11 @@ out center;`;
 
             <div className="rounded-xl border border-dashed border-white/10 bg-slate-900/20 p-6 text-xs text-slate-400 italic leading-relaxed text-center space-y-3">
               <div className="flex justify-center">
-                <Brain className="h-8 w-8 text-cyan-400/50 animate-pulse" />
+                <ClipboardList className="h-8 w-8 text-cyan-400/50 animate-pulse" />
               </div>
-              <p className="font-semibold text-slate-300">Mark Incidents with AI</p>
+              <p className="font-semibold text-slate-300">Pin Incidents Manually</p>
               <p className="text-[11px] text-slate-400">
-                Click anywhere on the map to select a point, write about a local event or incident, and let AI automatically identify and log it on the map.
+                Click anywhere on the map to select a location, describe the event or incident details, and pin it to the map.
               </p>
             </div>
 
@@ -5568,7 +5678,7 @@ out center;`;
           <div className="w-full max-w-xl rounded-[28px] border border-white/10 bg-[#0b1728] p-5 shadow-2xl shadow-black/40">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">Location Intelligence</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-cyan-300">Incident Pinboard</p>
                 <h3 className="mt-2 text-xl font-semibold text-white">Log Incident Details</h3>
                 <p className="mt-2 text-xs text-slate-400 font-mono">
                   Coordinates: {intelDraft.latitude?.toFixed(5)}° N, {intelDraft.longitude?.toFixed(5)}° E
@@ -5617,7 +5727,7 @@ out center;`;
                   {intelLoading ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Extracting...</span>
+                      <span>Logging...</span>
                     </>
                   ) : (
                     <span>Log Incident</span>
