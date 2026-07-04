@@ -856,10 +856,9 @@ function App() {
       }
     }
 
-    if (!targetFeature || !targetFeature.metadata) return;
-
-    const destLat = targetFeature.metadata.latitude;
-    const destLon = targetFeature.metadata.longitude;
+    // Default: Check if the feature has coordinate metadata
+    const destLat = targetFeature?.metadata?.latitude;
+    const destLon = targetFeature?.metadata?.longitude;
 
     if (destLat && destLon && destLat !== 0 && destLon !== 0) {
       let originLonLat = selectedCoordinates;
@@ -890,6 +889,32 @@ function App() {
             maxZoom: 16,
             duration: 600
           });
+        }
+      }
+    } else {
+      // Area-based features: fit map to the AOI boundary!
+      if (mapRef.current) {
+        const drawFeatures = drawSourceRef.current ? drawSourceRef.current.getFeatures() : [];
+        const activePolygon = drawFeatures.find(f => f.getGeometry()?.getType() === 'Polygon');
+        
+        if (activePolygon) {
+          const extent = activePolygon.getGeometry().getExtent();
+          mapRef.current.getView().fit(extent, {
+            padding: [100, 100, 100, 100],
+            maxZoom: 15,
+            duration: 600
+          });
+        } else if (selectedPointSourceRef.current) {
+          const selectedFeatures = selectedPointSourceRef.current.getFeatures();
+          const bufferFeature = selectedFeatures.find(f => f.get('isBuffer'));
+          if (bufferFeature) {
+            const extent = bufferFeature.getGeometry().getExtent();
+            mapRef.current.getView().fit(extent, {
+              padding: [100, 100, 100, 100],
+              maxZoom: 15,
+              duration: 600
+            });
+          }
         }
       }
     }
@@ -4052,31 +4077,67 @@ out center;`;
                                         </p>
                                         <p className="text-slate-400 font-sans">
                                           {(() => {
-                                            if (f.key === 'nearest_highway_distance') {
-                                              return 'We detected the nearest main highway or primary arterial link at this point. Pinned on the map with a warm-orange dashed line showing the shortest connection route.';
-                                            }
-                                            if (f.key === 'nearest_rail_station_distance') {
-                                              return 'The closest railway junction connecting this location to local and national train networks. Drawn on the map to display proximity.';
-                                            }
-                                            if (f.key === 'nearest_fuel_station_distance') {
-                                              return 'The nearest fuel/petrol station detected. Essential for mapping energy access, fuel logistics, and transportation routing.';
-                                            }
-                                            if (f.key === 'nearest_substation_distance') {
-                                              return 'The closest electrical grid power substation. Indicates electricity distribution density and grid infrastructure stability.';
-                                            }
-                                            if (f.key === 'nearest_telecom_tower_distance') {
-                                              return 'The closest mobile transmission tower. Highlights coverage reliability, network density, and digital communication access.';
-                                            }
-                                            if (f.key === 'nearest_water_infrastructure_distance') {
-                                              return 'The closest public water supply source, reservoir, or distribution pipe. Crucial for utility mapping.';
-                                            }
-                                            if (f.key === 'nearest_post_office_distance') {
-                                              return 'The nearest public postal services building. Shows general utility and public infrastructure convenience.';
-                                            }
-                                            if (f.key === 'nearest_cpcb_station_distance' || f.key === 'nearest_cpcb_station_name') {
-                                              return 'The closest official government Central Pollution Control Board (CPCB) air quality ground sensor. Shows where the ground-truth pollution data is measured.';
-                                            }
-                                            return 'Calculated dynamically over the selected region. Values represent spatial aggregations from regional databases and satellite raster datasets.';
+                                            const INSIGHTS = {
+                                              // Transport
+                                              nearest_highway_distance: 'We detected the nearest main highway or primary arterial link at this point. Pinned on the map with a warm-orange dashed line showing the shortest connection route.',
+                                              nearest_highway_class: 'The road category or level of the closest transport route. It shows whether the nearest connection is a highway, primary road, secondary road, or local street.',
+                                              nearest_rail_station_distance: 'The closest railway junction connecting this location to local and national train networks. Drawn on the map to display proximity.',
+                                              nearest_fuel_station_distance: 'The nearest fuel/petrol station detected. Essential for mapping energy access, fuel logistics, and transportation routing.',
+                                              road_density_count_2km: 'The density of road connections in a 2km radius. A higher count indicates excellent connectivity, while a low count shows isolated areas.',
+                                              // Population
+                                              population_density_per_sqkm: 'The average number of people living in each square kilometer. Helps estimate local urban congestion, commercial reach, and crowd size.',
+                                              density_classification: 'The settlement type category (e.g. urban, semi-urban, rural). Calculated based on regional population density benchmarks.',
+                                              population_within_1km: 'Total estimated count of residents living within a 1km walking distance. Key metric for local demand and public service planning.',
+                                              population_within_2km: 'Estimated residential population within a 2km radius. Represents the immediate local community scope.',
+                                              population_within_5km: 'Estimated residential population within a 5km radius. Represents the regional catchment area for hospitals, markets, and colleges.',
+                                              // Land
+                                              elevation_meters: 'The land height above sea level in meters. Crucial for understanding drainage, flood risks, and general terrain characteristics.',
+                                              slope_degrees: 'The steepness of the terrain in degrees. Flat land (0-2°) is ideal for construction, while steep slopes are subject to high erosion and runoff.',
+                                              lulc_class: 'The dominant land cover type at the center coordinate (e.g., buildings, crops, trees). Sourced from satellite spectral classification.',
+                                              ndvi_value: 'The greenery index (NDVI) at the center point. Higher values (0.4 to 0.8) indicate healthy green vegetation, while values near 0 show bare soil or concrete.',
+                                              ndvi_mean: 'The average vegetation density across the selected area of interest. Shows the overall green cover density of the custom zone.',
+                                              ndvi_min: 'The minimum vegetation index recorded inside the selected boundary. Typically indicates fully paved roads or concrete structures.',
+                                              ndvi_max: 'The maximum vegetation index recorded inside the selected boundary. Pinpoints the densest patch of forest or park canopy.',
+                                              ndvi_stddev: 'The standard deviation of greenery index. Shows how diverse the vegetation is across the selected zone (e.g., mix of grass, trees, and buildings).',
+                                              // Infrastructure
+                                              nearest_substation_distance: 'The closest electrical grid power substation. Indicates electricity distribution density and grid infrastructure stability.',
+                                              power_lines_within_2km: 'Total length/count of high-voltage transmission lines in the vicinity. Crucial for industrial grid connection feasibility.',
+                                              nearest_telecom_tower_distance: 'The closest mobile transmission tower. Highlights coverage reliability, network density, and digital communication access.',
+                                              telecom_towers_within_2km: 'Total mobile transmission towers within a 2km radius. Higher counts mean better signal coverage and mobile bandwidth.',
+                                              nearest_post_office_distance: 'The nearest public postal services building. Shows general utility and public infrastructure convenience.',
+                                              // Water
+                                              nearest_water_infrastructure_distance: 'The closest public water supply source, reservoir, or distribution pipe. Crucial for utility mapping.',
+                                              // Nearby Facilities
+                                              schoolsCount: 'Total number of primary, secondary, and higher education schools detected in the area. Key indicator of family friendliness and social infrastructure.',
+                                              hospitalsCount: 'Total hospitals, medical clinics, and healthcare centers detected in the area. Vital for assessing local health safety and emergency readiness.',
+                                              gymsCount: 'Number of physical fitness centers, gymnasiums, and public parks in the area. Shows recreational and lifestyle accessibility.',
+                                              waterBodiesCount: 'Number of lakes, ponds, water channels, or riverbanks detected within the area. Important for local environmental health.',
+                                              // Environment
+                                              pm2_5_concentration: 'The level of fine dust particles (PM2.5) in the atmosphere. Values above 50 µg/m³ can impact sensitive groups, while values over 150 require safety precautions.',
+                                              nearest_cpcb_station_name: 'The name of the official government Central Pollution Control Board monitoring station. Sourced from ground-truth sensors.',
+                                              nearest_cpcb_station_distance: 'The shortest path to the closest official government air quality monitoring station. Visualized on the map with a connection line.',
+                                              forestAreaSqKm: 'The total estimated area covered by dense forest canopy inside the selected zone. Sourced from regional land-use vector maps.',
+                                              // Weather
+                                              current_temperature: 'The active real-time air temperature at this coordinate. Fetched dynamically from Open-Meteo local stations.',
+                                              current_humidity: 'The percentage of water vapor in the air. High humidity increases heat index, while low humidity indicates dry conditions.',
+                                              current_wind_speed: 'Current speed of the wind at this location. Crucial for agricultural planning, wind energy assessment, and weather tracking.',
+                                              annual_average_rainfall: 'The average daily rainfall depth recorded for this region over historical data. Sourced from NASA POWER grid models.',
+                                              annual_average_relative_humidity: 'The historical average relative humidity percentage recorded annually in this region.',
+                                              average_solar_radiation: 'The average solar sunlight energy received daily. Critical metric for solar panels and crop growth planning.',
+                                              annual_average_temperature: 'The historical mean annual temperature of this region, reflecting long-term climate trends.',
+                                              // Disaster
+                                              flood_risk_classification: 'Calculated flood vulnerability rating (e.g., Low, Medium, High). Based on historical runoff patterns, elevation, and river proximity.',
+                                              seismic_hazard_zone: 'Official earthquake risk classification. Varanasi lies in Zone III (Moderate Damage Risk Zone) according to BIS seismic zoning maps.',
+                                              recent_seismic_activity_count_200km: 'Number of earthquake occurrences recorded within a 200km radius over recent historical catalogues.',
+                                              maximum_recent_magnitude: 'The highest magnitude earthquake recorded nearby. Helps understand regional tectonic stability.',
+                                              // Economy
+                                              retail_density_per_sqkm: 'The density of retail shops operating per square kilometer. High density indicates a bustling commercial district.',
+                                              supermarkets_count: 'The count of large grocery stores or shopping marts nearby. Indicates urban retail maturity and consumer convenience.',
+                                              convenience_stores_count: 'Number of local corner shops and small convenience stores. Crucial for daily neighborhood shopping needs.',
+                                              beverage_distributors_count: 'Number of tea stalls, cold drink shops, or beverage cafes nearby. Reflects local foot-traffic hubs.',
+                                              warehouses_count: 'Number of industrial storage warehouses and distribution depots. Indicates logistics and business operations presence.'
+                                            };
+                                            return INSIGHTS[f.key] || 'Calculated dynamically over the selected region. Values represent spatial aggregations from regional databases and satellite raster datasets.';
                                           })()}
                                         </p>
                                       </div>

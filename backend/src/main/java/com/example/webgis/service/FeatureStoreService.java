@@ -196,7 +196,7 @@ public class FeatureStoreService {
         // Distance to highway: normalize close to 1.0, far to 0.0 (max 10km)
         double normHwy = Math.max(0.0, 1.0 - (hwyDist / 10000.0));
         features.put("nearest_highway_distance", new FeatureValue(hwyDist, normHwy, Map.of("source", "OpenStreetMap", "units", "meters", "type", "numeric", "latitude", hwyLat, "longitude", hwyLon)));
-        features.put("nearest_highway_class", new FeatureValue(hwyClass, null, Map.of("source", "OpenStreetMap", "units", "categorical", "type", "categorical")));
+        features.put("nearest_highway_class", new FeatureValue(hwyClass, null, Map.of("source", "OpenStreetMap", "units", "categorical", "type", "categorical", "latitude", hwyLat, "longitude", hwyLon)));
 
         double normRail = Math.max(0.0, 1.0 - (railDist / 15000.0));
         features.put("nearest_rail_station_distance", new FeatureValue(railDist, normRail, Map.of("source", "OpenStreetMap", "units", "meters", "type", "numeric", "latitude", railLat, "longitude", railLon)));
@@ -404,7 +404,7 @@ public class FeatureStoreService {
         }
 
         if (closestStation != null) {
-            features.put("nearest_cpcb_station_name", new FeatureValue(closestStation.name, null, Map.of("source", "CPCB India Portal", "units", "categorical", "type", "categorical")));
+            features.put("nearest_cpcb_station_name", new FeatureValue(closestStation.name, null, Map.of("source", "CPCB India Portal", "units", "categorical", "type", "categorical", "latitude", closestStation.lat, "longitude", closestStation.lon)));
             features.put("nearest_cpcb_station_distance", new FeatureValue(minDistance, Math.max(0.0, 1.0 - (minDistance / 10000.0)), Map.of("source", "CPCB India Portal", "units", "meters", "type", "numeric", "latitude", closestStation.lat, "longitude", closestStation.lon)));
         }
 
