@@ -69,7 +69,7 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
                 "  node(around:5000, %f, %f)[industrial=warehouse];\n" +
                 "  node(around:5000, %f, %f)[amenity=cold_storage];\n" +
                 ");\n" +
-                "out center body;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
+                "out center;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
 
         String jsonResponse = executeOverpassQuery(query);
         if (jsonResponse == null) {

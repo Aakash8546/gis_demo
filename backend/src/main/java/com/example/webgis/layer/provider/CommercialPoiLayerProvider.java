@@ -69,7 +69,7 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
                 "  way(around:2000, %f, %f)[building=warehouse];\n" +
                 "  way(around:2000, %f, %f)[landuse=industrial];\n" +
                 ");\n" +
-                "out center body;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
+                "out center;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
 
         String jsonResponse = executeOverpassQuery(query);
         if (jsonResponse == null) {

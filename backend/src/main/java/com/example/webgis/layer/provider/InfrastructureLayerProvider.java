@@ -67,7 +67,7 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
                 "  node(around:2000, %f, %f)[man_made=tower][\"tower:type\"=communication];\n" +
                 "  node(around:2000, %f, %f)[amenity=post_office];\n" +
                 ");\n" +
-                "out center body;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
+                "out center;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
 
         String jsonResponse = executeOverpassQuery(query);
         if (jsonResponse == null) {

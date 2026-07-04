@@ -72,7 +72,7 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
                 "  node(around:10000, %f, %f)[railway=station];\n" +
                 "  node(around:3000, %f, %f)[amenity=fuel];\n" +
                 ");\n" +
-                "out center body;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
+                "out center;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
 
         String jsonResponse = executeOverpassQuery(query);
         if (jsonResponse == null) {
