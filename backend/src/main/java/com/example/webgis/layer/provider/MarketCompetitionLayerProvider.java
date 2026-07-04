@@ -58,7 +58,7 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
 
         // Query OSM for wholesale shops, beverages, supermarkets, convenience stores, warehouses, and cold storage
         String query = String.format(Locale.US,
-                "[out:json][timeout:10];\n" +
+                "[out:json][timeout:30];\n" +
                 "(\n" +
                 "  node(around:5000, %f, %f)[shop=wholesale];\n" +
                 "  node(around:5000, %f, %f)[shop=beverages];\n" +
@@ -209,7 +209,7 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
         String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
         synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
             // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
             for (String mirror : OVERPASS_MIRRORS) {
                 try {
                     log.info("Querying Overpass mirror for MarketCompetition: {}", mirror);

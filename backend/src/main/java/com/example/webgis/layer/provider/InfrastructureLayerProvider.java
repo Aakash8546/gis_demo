@@ -58,7 +58,7 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
 
         // Query OSM for substations, power lines, water points, telecom towers, and post offices
         String query = String.format(Locale.US,
-                "[out:json][timeout:10];\n" +
+                "[out:json][timeout:30];\n" +
                 "(\n" +
                 "  node(around:2000, %f, %f)[power=substation];\n" +
                 "  way(around:2000, %f, %f)[power=line];\n" +
@@ -283,7 +283,7 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
         String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
         synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
             // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
             for (String mirror : OVERPASS_MIRRORS) {
                 try {
                     log.info("Querying Overpass mirror for Infrastructure: {}", mirror);

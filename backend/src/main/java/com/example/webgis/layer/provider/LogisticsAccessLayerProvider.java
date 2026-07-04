@@ -62,14 +62,14 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
 
         // 1. Query OSM for highways, rail stations, and fuel stations
         String query = String.format(Locale.US,
-                "[out:json][timeout:10];\n" +
+                "[out:json][timeout:30];\n" +
                 "(\n" +
                 "  way(around:5000, %f, %f)[highway=primary];\n" +
                 "  way(around:3000, %f, %f)[highway=secondary];\n" +
                 "  way(around:2000, %f, %f)[highway=tertiary];\n" +
-                "  way(around:10000, %f, %f)[highway=trunk];\n" +
-                "  way(around:10000, %f, %f)[highway=motorway];\n" +
-                "  node(around:10000, %f, %f)[railway=station];\n" +
+                "  way(around:5000, %f, %f)[highway=trunk];\n" +
+                "  way(around:5000, %f, %f)[highway=motorway];\n" +
+                "  node(around:5000, %f, %f)[railway=station];\n" +
                 "  node(around:3000, %f, %f)[amenity=fuel];\n" +
                 ");\n" +
                 "out center;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
@@ -275,7 +275,7 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
         String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
         synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
             // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
             for (String mirror : OVERPASS_MIRRORS) {
                 try {
                     log.info("Querying Overpass mirror for LogisticsAccess: {}", mirror);

@@ -57,7 +57,7 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
         Map<String, Object> result = new LinkedHashMap<>();
 
         String query = String.format(Locale.US,
-                "[out:json][timeout:10];\n" +
+                "[out:json][timeout:30];\n" +
                 "(\n" +
                 "  node(around:2000, %f, %f)[shop];\n" +
                 "  node(around:2000, %f, %f)[office];\n" +
@@ -233,7 +233,7 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
         String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
         synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
             // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(150); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(1000); } catch (InterruptedException ignored) {}
             for (String mirror : OVERPASS_MIRRORS) {
                 try {
                     log.info("Querying Overpass mirror for CommercialPoi: {}", mirror);
