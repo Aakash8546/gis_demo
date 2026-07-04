@@ -179,16 +179,16 @@ public class FeatureStoreService {
 
             if (hwy != null && hwy.get("distance_m") != null) hwyDist = ((Number) hwy.get("distance_m")).longValue();
             if (hwy != null && hwy.containsKey("class")) hwyClass = (String) hwy.get("class");
-            if (hwy != null && hwy.containsKey("latitude")) hwyLat = ((Number) hwy.get("latitude")).doubleValue();
-            if (hwy != null && hwy.containsKey("longitude")) hwyLon = ((Number) hwy.get("longitude")).doubleValue();
+            if (hwy != null && hwy.get("latitude") != null) hwyLat = ((Number) hwy.get("latitude")).doubleValue();
+            if (hwy != null && hwy.get("longitude") != null) hwyLon = ((Number) hwy.get("longitude")).doubleValue();
 
             if (rail != null && rail.get("distance_m") != null) railDist = ((Number) rail.get("distance_m")).longValue();
-            if (rail != null && rail.containsKey("latitude")) railLat = ((Number) rail.get("latitude")).doubleValue();
-            if (rail != null && rail.containsKey("longitude")) railLon = ((Number) rail.get("longitude")).doubleValue();
+            if (rail != null && rail.get("latitude") != null) railLat = ((Number) rail.get("latitude")).doubleValue();
+            if (rail != null && rail.get("longitude") != null) railLon = ((Number) rail.get("longitude")).doubleValue();
 
             if (fuel != null && fuel.get("distance_m") != null) fuelDist = ((Number) fuel.get("distance_m")).longValue();
-            if (fuel != null && fuel.containsKey("latitude")) fuelLat = ((Number) fuel.get("latitude")).doubleValue();
-            if (fuel != null && fuel.containsKey("longitude")) fuelLon = ((Number) fuel.get("longitude")).doubleValue();
+            if (fuel != null && fuel.get("latitude") != null) fuelLat = ((Number) fuel.get("latitude")).doubleValue();
+            if (fuel != null && fuel.get("longitude") != null) fuelLon = ((Number) fuel.get("longitude")).doubleValue();
 
             if (density != null && density.containsKey("roads_within_2km")) roadCount = ((Number) density.get("roads_within_2km")).intValue();
         }
@@ -275,24 +275,24 @@ public class FeatureStoreService {
             if (power != null) {
                 if (power.get("nearest_substation_m") != null) subDist = ((Number) power.get("nearest_substation_m")).longValue();
                 if (power.containsKey("power_lines_within_2km")) linesCount = ((Number) power.get("power_lines_within_2km")).intValue();
-                if (power.containsKey("latitude")) subLat = ((Number) power.get("latitude")).doubleValue();
-                if (power.containsKey("longitude")) subLon = ((Number) power.get("longitude")).doubleValue();
+                if (power.get("latitude") != null) subLat = ((Number) power.get("latitude")).doubleValue();
+                if (power.get("longitude") != null) subLon = ((Number) power.get("longitude")).doubleValue();
             }
             if (water != null) {
                 if (water.get("nearest_source_m") != null) waterDist = ((Number) water.get("nearest_source_m")).longValue();
-                if (water.containsKey("latitude")) waterLat = ((Number) water.get("latitude")).doubleValue();
-                if (water.containsKey("longitude")) waterLon = ((Number) water.get("longitude")).doubleValue();
+                if (water.get("latitude") != null) waterLat = ((Number) water.get("latitude")).doubleValue();
+                if (water.get("longitude") != null) waterLon = ((Number) water.get("longitude")).doubleValue();
             }
             if (telecom != null) {
                 if (telecom.get("nearest_tower_m") != null) towerDist = ((Number) telecom.get("nearest_tower_m")).longValue();
                 if (telecom.containsKey("towers_within_2km")) towersCount = ((Number) telecom.get("towers_within_2km")).intValue();
-                if (telecom.containsKey("latitude")) telecomLat = ((Number) telecom.get("latitude")).doubleValue();
-                if (telecom.containsKey("longitude")) telecomLon = ((Number) telecom.get("longitude")).doubleValue();
+                if (telecom.get("latitude") != null) telecomLat = ((Number) telecom.get("latitude")).doubleValue();
+                if (telecom.get("longitude") != null) telecomLon = ((Number) telecom.get("longitude")).doubleValue();
             }
             if (postal != null) {
                 if (postal.get("nearest_post_office_m") != null) postDist = ((Number) postal.get("nearest_post_office_m")).longValue();
-                if (postal.containsKey("latitude")) postalLat = ((Number) postal.get("latitude")).doubleValue();
-                if (postal.containsKey("longitude")) postalLon = ((Number) postal.get("longitude")).doubleValue();
+                if (postal.get("latitude") != null) postalLat = ((Number) postal.get("latitude")).doubleValue();
+                if (postal.get("longitude") != null) postalLon = ((Number) postal.get("longitude")).doubleValue();
             }
         }
 
