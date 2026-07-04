@@ -761,6 +761,7 @@ function App() {
   const [decisionSubTab, setDecisionSubTab] = useState('general');
   const [knowledgeRadius, setKnowledgeRadius] = useState(2000); // default 2km (in meters)
   const [showBuffer, setShowBuffer] = useState(true);
+  const [expandedAreaCards, setExpandedAreaCards] = useState({});
   const [showKgVisualizer, setShowKgVisualizer] = useState(false);
   const [polygonKnowledgeContext, setPolygonKnowledgeContext] = useState(null);
   const [polygonKnowledgeLoading, setPolygonKnowledgeLoading] = useState(false);
