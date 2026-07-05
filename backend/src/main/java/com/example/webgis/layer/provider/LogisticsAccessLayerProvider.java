@@ -5,18 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -24,21 +14,13 @@ import java.util.*;
 public class LogisticsAccessLayerProvider implements GisLayerProvider {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient;
+    private final OverpassQueryService overpassQueryService;
 
     @Value("${openrouteservice.api.key:}")
     private String orsApiKey;
 
-    private static final String[] OVERPASS_MIRRORS = {
-            "https://z.overpass-api.de/api/interpreter",
-            "https://overpass-api.de/api/interpreter",
-            "https://lz4.overpass-api.de/api/interpreter"
-    };
-
-    public LogisticsAccessLayerProvider() {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+    public LogisticsAccessLayerProvider(OverpassQueryService overpassQueryService) {
+        this.overpassQueryService = overpassQueryService;
     }
 
     @Override
@@ -60,21 +42,7 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
     public Map<String, Object> queryPoint(double lon, double lat) {
         Map<String, Object> result = new LinkedHashMap<>();
 
-        // 1. Query OSM for highways, rail stations, and fuel stations
-        String query = String.format(Locale.US,
-                "[out:json][timeout:30];\n" +
-                "(\n" +
-                "  way(around:5000, %f, %f)[highway=primary];\n" +
-                "  way(around:3000, %f, %f)[highway=secondary];\n" +
-                "  way(around:2000, %f, %f)[highway=tertiary];\n" +
-                "  way(around:5000, %f, %f)[highway=trunk];\n" +
-                "  way(around:5000, %f, %f)[highway=motorway];\n" +
-                "  node(around:5000, %f, %f)[railway=station];\n" +
-                "  node(around:3000, %f, %f)[amenity=fuel];\n" +
-                ");\n" +
-                "out center;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
-
-        String jsonResponse = executeOverpassQuery(query);
+        String jsonResponse = overpassQueryService.getUnifiedPointData(lat, lon);
         if (jsonResponse == null) {
             result.put("status", "fallback");
             result.put("nearestHighway", createFallbackHighway(lat, lon));
@@ -103,8 +71,15 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
 
             for (JsonNode elem : elements) {
                 JsonNode tags = elem.path("tags");
+
+                boolean isLogistics = tags.has("highway") ||
+                                      "station".equals(tags.path("railway").asText()) ||
+                                      "fuel".equals(tags.path("amenity").asText());
+                if (!isLogistics) {
+                    continue;
+                }
+
                 String name = tags.path("name").asText("Unnamed");
-                
                 double elemLat = elem.has("lat") ? elem.path("lat").asDouble() : (elem.has("center") ? elem.path("center").path("lat").asDouble() : lat);
                 double elemLon = elem.has("lon") ? elem.path("lon").asDouble() : (elem.has("center") ? elem.path("center").path("lon").asDouble() : lon);
                 double distance = calculateDistance(lat, lon, elemLat, elemLon);
@@ -190,7 +165,6 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
             if (orsApiKey != null && !orsApiKey.trim().isEmpty()) {
                 isochrone.put("available", true);
                 isochrone.put("provider", "OpenRouteService");
-                // Here we could invoke ORS Isochrone API, or return a payload indicating it can be integrated
                 isochrone.put("note", "ORS key found. Isochrone data is supported.");
             } else {
                 isochrone.put("available", false);
@@ -269,36 +243,5 @@ public class LogisticsAccessLayerProvider implements GisLayerProvider {
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
         return R * c; // in metres
-    }
-
-    private String executeOverpassQuery(String overpassQuery) {
-        String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
-        synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
-            // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-            for (String mirror : OVERPASS_MIRRORS) {
-                try {
-                    log.info("Querying Overpass mirror for LogisticsAccess: {}", mirror);
-                    HttpRequest request = HttpRequest.newBuilder()
-                            .uri(URI.create(mirror))
-                            .timeout(Duration.ofSeconds(10))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)")
-                            .POST(HttpRequest.BodyPublishers.ofString(payload))
-                            .build();
-
-                    HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-                    if (response.statusCode() == 200) {
-                        byte[] bytes = response.body();
-                        return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
-                    } else {
-                        log.warn("Overpass mirror failed for LogisticsAccess: {} with status: {}", mirror, response.statusCode());
-                    }
-                } catch (Exception e) {
-                    log.warn("Overpass mirror failed for LogisticsAccess: {} due to:", mirror, e);
-                }
-            }
-        }
-        return null;
     }
 }

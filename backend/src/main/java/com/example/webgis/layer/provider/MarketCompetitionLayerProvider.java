@@ -4,18 +4,8 @@ import com.example.webgis.layer.GisLayerProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -23,18 +13,10 @@ import java.util.*;
 public class MarketCompetitionLayerProvider implements GisLayerProvider {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient;
+    private final OverpassQueryService overpassQueryService;
 
-    private static final String[] OVERPASS_MIRRORS = {
-            "https://overpass-api.de/api/interpreter",
-            "https://lz4.overpass-api.de/api/interpreter",
-            "https://z.overpass-api.de/api/interpreter"
-    };
-
-    public MarketCompetitionLayerProvider() {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+    public MarketCompetitionLayerProvider(OverpassQueryService overpassQueryService) {
+        this.overpassQueryService = overpassQueryService;
     }
 
     @Override
@@ -56,22 +38,7 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
     public Map<String, Object> queryPoint(double lon, double lat) {
         Map<String, Object> result = new LinkedHashMap<>();
 
-        // Query OSM for wholesale shops, beverages, supermarkets, convenience stores, warehouses, and cold storage
-        String query = String.format(Locale.US,
-                "[out:json][timeout:30];\n" +
-                "(\n" +
-                "  node(around:5000, %f, %f)[shop=wholesale];\n" +
-                "  node(around:5000, %f, %f)[shop=beverages];\n" +
-                "  node(around:3000, %f, %f)[shop=supermarket];\n" +
-                "  node(around:2000, %f, %f)[shop=convenience];\n" +
-                "  node(around:5000, %f, %f)[building=warehouse];\n" +
-                "  way(around:5000, %f, %f)[building=warehouse];\n" +
-                "  node(around:5000, %f, %f)[industrial=warehouse];\n" +
-                "  node(around:5000, %f, %f)[amenity=cold_storage];\n" +
-                ");\n" +
-                "out center;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
-
-        String jsonResponse = executeOverpassQuery(query);
+        String jsonResponse = overpassQueryService.getUnifiedPointData(lat, lon);
         if (jsonResponse == null) {
             result.put("status", "fallback");
             result.put("retailDensity", createFallbackRetailDensity());
@@ -95,6 +62,18 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
 
             for (JsonNode elem : elements) {
                 JsonNode tags = elem.path("tags");
+
+                boolean isMarket = "wholesale".equals(tags.path("shop").asText()) ||
+                                   "beverages".equals(tags.path("shop").asText()) ||
+                                   "supermarket".equals(tags.path("shop").asText()) ||
+                                   "convenience".equals(tags.path("shop").asText()) ||
+                                   "warehouse".equals(tags.path("building").asText()) ||
+                                   "warehouse".equals(tags.path("industrial").asText()) ||
+                                   "cold_storage".equals(tags.path("amenity").asText());
+                if (!isMarket) {
+                    continue;
+                }
+
                 String shop = tags.path("shop").asText();
                 String building = tags.path("building").asText();
                 String industrial = tags.path("industrial").asText();
@@ -188,51 +167,5 @@ public class MarketCompetitionLayerProvider implements GisLayerProvider {
         c.put("beverageDistributors", 1);
         c.put("fmcgWarehouses", 1);
         return c;
-    }
-
-    private double calculateDistance(double lat1, double lon1, double lat2, double lon2) {
-        final double R = 6371000.0; // metres
-        double phi1 = Math.toRadians(lat1);
-        double phi2 = Math.toRadians(lat2);
-        double deltaPhi = Math.toRadians(lat2 - lat1);
-        double deltaLambda = Math.toRadians(lon2 - lon1);
-
-        double a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
-                   Math.cos(phi1) * Math.cos(phi2) *
-                   Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-        return R * c; // in metres
-    }
-
-    private String executeOverpassQuery(String overpassQuery) {
-        String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
-        synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
-            // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-            for (String mirror : OVERPASS_MIRRORS) {
-                try {
-                    log.info("Querying Overpass mirror for MarketCompetition: {}", mirror);
-                    HttpRequest request = HttpRequest.newBuilder()
-                            .uri(URI.create(mirror))
-                            .timeout(Duration.ofSeconds(10))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)")
-                            .POST(HttpRequest.BodyPublishers.ofString(payload))
-                            .build();
-
-                    HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-                    if (response.statusCode() == 200) {
-                        byte[] bytes = response.body();
-                        return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
-                    } else {
-                        log.warn("Overpass mirror failed for MarketCompetition: {} with status: {}", mirror, response.statusCode());
-                    }
-                } catch (Exception e) {
-                    log.warn("Overpass mirror failed for MarketCompetition: {} due to:", mirror, e);
-                }
-            }
-        }
-        return null;
     }
 }

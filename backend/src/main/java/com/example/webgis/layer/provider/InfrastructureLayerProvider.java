@@ -4,18 +4,8 @@ import com.example.webgis.layer.GisLayerProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -23,18 +13,10 @@ import java.util.*;
 public class InfrastructureLayerProvider implements GisLayerProvider {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient;
+    private final OverpassQueryService overpassQueryService;
 
-    private static final String[] OVERPASS_MIRRORS = {
-            "https://lz4.overpass-api.de/api/interpreter",
-            "https://z.overpass-api.de/api/interpreter",
-            "https://overpass-api.de/api/interpreter"
-    };
-
-    public InfrastructureLayerProvider() {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+    public InfrastructureLayerProvider(OverpassQueryService overpassQueryService) {
+        this.overpassQueryService = overpassQueryService;
     }
 
     @Override
@@ -56,20 +38,7 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
     public Map<String, Object> queryPoint(double lon, double lat) {
         Map<String, Object> result = new LinkedHashMap<>();
 
-        // Query OSM for substations, power lines, water points, telecom towers, and post offices
-        String query = String.format(Locale.US,
-                "[out:json][timeout:30];\n" +
-                "(\n" +
-                "  node(around:2000, %f, %f)[power=substation];\n" +
-                "  way(around:2000, %f, %f)[power=line];\n" +
-                "  node(around:2000, %f, %f)[man_made=water_tower];\n" +
-                "  node(around:2000, %f, %f)[amenity=water_point];\n" +
-                "  node(around:2000, %f, %f)[man_made=tower][\"tower:type\"=communication];\n" +
-                "  node(around:2000, %f, %f)[amenity=post_office];\n" +
-                ");\n" +
-                "out center;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
-
-        String jsonResponse = executeOverpassQuery(query);
+        String jsonResponse = overpassQueryService.getUnifiedPointData(lat, lon);
         if (jsonResponse == null) {
             result.put("status", "fallback");
             result.put("power", createFallbackPower(lat, lon));
@@ -91,6 +60,7 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
             double minWaterDist = Double.MAX_VALUE;
             double closestWaterLat = 0.0;
             double closestWaterLon = 0.0;
+            String waterSourceType = "unknown";
 
             double minTowerDist = Double.MAX_VALUE;
             double closestTowerLat = 0.0;
@@ -105,6 +75,26 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
 
             for (JsonNode elem : elements) {
                 JsonNode tags = elem.path("tags");
+
+                boolean isWaterSource = "water_tower".equals(tags.path("man_made").asText()) ||
+                                       "water_well".equals(tags.path("man_made").asText()) ||
+                                       "water_works".equals(tags.path("man_made").asText()) ||
+                                       "water_point".equals(tags.path("amenity").asText()) ||
+                                       "drinking_water".equals(tags.path("amenity").asText());
+
+                boolean isTelecomTower = "tower".equals(tags.path("man_made").asText()) ||
+                                        "mast".equals(tags.path("man_made").asText()) ||
+                                        tags.has("telecom");
+
+                boolean isInfra = "substation".equals(tags.path("power").asText()) ||
+                                  "line".equals(tags.path("power").asText()) ||
+                                  isWaterSource ||
+                                  isTelecomTower ||
+                                  "post_office".equals(tags.path("amenity").asText());
+                if (!isInfra) {
+                    continue;
+                }
+
                 double elemLat = elem.has("lat") ? elem.path("lat").asDouble() : (elem.has("center") ? elem.path("center").path("lat").asDouble() : lat);
                 double elemLon = elem.has("lon") ? elem.path("lon").asDouble() : (elem.has("center") ? elem.path("center").path("lon").asDouble() : lon);
                 double distance = calculateDistance(lat, lon, elemLat, elemLon);
@@ -117,13 +107,22 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
                     }
                 } else if ("line".equals(tags.path("power").asText())) {
                     powerLines++;
-                } else if ("water_tower".equals(tags.path("man_made").asText()) || "water_point".equals(tags.path("amenity").asText())) {
+                } else if (isWaterSource) {
                     if (distance < minWaterDist) {
                         minWaterDist = distance;
                         closestWaterLat = elemLat;
                         closestWaterLon = elemLon;
+                        if ("water_tower".equals(tags.path("man_made").asText())) {
+                            waterSourceType = "water_tower";
+                        } else if ("water_well".equals(tags.path("man_made").asText())) {
+                            waterSourceType = "water_well";
+                        } else if ("water_works".equals(tags.path("man_made").asText())) {
+                            waterSourceType = "water_works";
+                        } else {
+                            waterSourceType = "drinking_water_point";
+                        }
                     }
-                } else if ("tower".equals(tags.path("man_made").asText())) {
+                } else if (isTelecomTower) {
                     if (distance < minTowerDist) {
                         minTowerDist = distance;
                         closestTowerLat = elemLat;
@@ -165,7 +164,7 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
 
             Map<String, Object> water = new LinkedHashMap<>();
             water.put("nearest_source_m", minWaterDist == Double.MAX_VALUE ? null : Math.round(minWaterDist));
-            water.put("type", minWaterDist == Double.MAX_VALUE ? "water_point" : "water_tower");
+            water.put("type", waterSourceType);
             water.put("score", minWaterDist < 1000 ? "good" : "adequate");
             water.put("latitude", closestWaterLat);
             water.put("longitude", closestWaterLon);
@@ -277,36 +276,5 @@ public class InfrastructureLayerProvider implements GisLayerProvider {
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
         return R * c; // in metres
-    }
-
-    private String executeOverpassQuery(String overpassQuery) {
-        String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
-        synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
-            // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-            for (String mirror : OVERPASS_MIRRORS) {
-                try {
-                    log.info("Querying Overpass mirror for Infrastructure: {}", mirror);
-                    HttpRequest request = HttpRequest.newBuilder()
-                            .uri(URI.create(mirror))
-                            .timeout(Duration.ofSeconds(10))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)")
-                            .POST(HttpRequest.BodyPublishers.ofString(payload))
-                            .build();
-
-                    HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-                    if (response.statusCode() == 200) {
-                        byte[] bytes = response.body();
-                        return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
-                    } else {
-                        log.warn("Overpass mirror failed for Infrastructure: {} with status: {}", mirror, response.statusCode());
-                    }
-                } catch (Exception e) {
-                    log.warn("Overpass mirror failed for Infrastructure: {} due to:", mirror, e);
-                }
-            }
-        }
-        return null;
     }
 }

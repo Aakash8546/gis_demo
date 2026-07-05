@@ -4,14 +4,8 @@ import com.example.webgis.layer.GisLayerProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -19,13 +13,11 @@ import java.util.*;
 public class HeritageLayerProvider implements GisLayerProvider {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final OverpassQueryService overpassQueryService;
 
-    private static final String[] OVERPASS_MIRRORS = {
-            "https://lz4.overpass-api.de/api/interpreter",
-            "https://z.overpass-api.de/api/interpreter",
-            "https://overpass-api.de/api/interpreter"
-    };
+    public HeritageLayerProvider(OverpassQueryService overpassQueryService) {
+        this.overpassQueryService = overpassQueryService;
+    }
 
     @Override
     public String getLayerId() {
@@ -46,31 +38,8 @@ public class HeritageLayerProvider implements GisLayerProvider {
     public Map<String, Object> queryPoint(double lon, double lat) {
         Map<String, Object> result = new LinkedHashMap<>();
 
-        // Find heritage/historic/ghats nodes/ways within 1km around the coordinate
-        String query = String.format(Locale.US,
-                "[out:json][timeout:30];\n" +
-                "(\n" +
-                "  node(around:1000, %f, %f)[\"historic\"];\n" +
-                "  way(around:1000, %f, %f)[\"historic\"];\n" +
-                "  node(around:1000, %f, %f)[\"man_made\"=\"ghat\"];\n" +
-                "  way(around:1000, %f, %f)[\"man_made\"=\"ghat\"];\n" +
-                "  node(around:1000, %f, %f)[\"tourism\"=\"attraction\"];\n" +
-                "  way(around:1000, %f, %f)[\"tourism\"=\"attraction\"];\n" +
-                "  node(around:1000, %f, %f)[\"place\"=\"ghat\"];\n" +
-                "  node(around:1000, %f, %f)[\"tourism\"=\"ghat\"];\n" +
-                ");\n" +
-                "out center tags;", 
-                lat, lon, 
-                lat, lon, 
-                lat, lon, 
-                lat, lon, 
-                lat, lon, 
-                lat, lon, 
-                lat, lon, 
-                lat, lon);
-
-        log.info("Executing Heritage & Ghats Overpass query around point: {}, {}", lat, lon);
-        String jsonResponse = executeOverpassQuery(query);
+        log.info("Requesting Heritage & Ghats from Unified Query around point: {}, {}", lat, lon);
+        String jsonResponse = overpassQueryService.getUnifiedPointData(lat, lon);
         if (jsonResponse == null) {
             result.put("status", "fallback");
             result.put("heritageCount", 0);
@@ -85,6 +54,16 @@ public class HeritageLayerProvider implements GisLayerProvider {
             List<Map<String, String>> sites = new ArrayList<>();
             for (JsonNode elem : elements) {
                 JsonNode tags = elem.path("tags");
+
+                boolean isHeritage = tags.has("historic") ||
+                                     "ghat".equals(tags.path("man_made").asText()) ||
+                                     "attraction".equals(tags.path("tourism").asText()) ||
+                                     "ghat".equals(tags.path("place").asText()) ||
+                                     "ghat".equals(tags.path("tourism").asText());
+                if (!isHeritage) {
+                    continue;
+                }
+
                 String name = tags.path("name").asText("");
                 if (!name.isEmpty() && !name.equals("Unnamed")) {
                     Map<String, String> site = new HashMap<>();
@@ -153,21 +132,7 @@ public class HeritageLayerProvider implements GisLayerProvider {
         }
         String polyStr = polyBuilder.toString().trim();
 
-        String query = String.format(Locale.US,
-                "[out:json][timeout:30];\n" +
-                "(\n" +
-                "  node(poly: \"%s\")[\"historic\"];\n" +
-                "  way(poly: \"%s\")[\"historic\"];\n" +
-                "  node(poly: \"%s\")[\"man_made\"=\"ghat\"];\n" +
-                "  way(poly: \"%s\")[\"man_made\"=\"ghat\"];\n" +
-                "  node(poly: \"%s\")[\"tourism\"=\"attraction\"];\n" +
-                "  way(poly: \"%s\")[\"tourism\"=\"attraction\"];\n" +
-                "  node(poly: \"%s\")[\"place\"=\"ghat\"];\n" +
-                "  node(poly: \"%s\")[\"tourism\"=\"ghat\"];\n" +
-                ");\n" +
-                "out center tags;", polyStr, polyStr, polyStr, polyStr, polyStr, polyStr, polyStr, polyStr);
-
-        String jsonResponse = executeOverpassQuery(query);
+        String jsonResponse = overpassQueryService.getUnifiedPolygonData(polyStr);
         Map<String, Object> result = new LinkedHashMap<>();
         if (jsonResponse == null) {
             result.put("status", "error");
@@ -181,6 +146,16 @@ public class HeritageLayerProvider implements GisLayerProvider {
             List<Map<String, String>> sites = new ArrayList<>();
             for (JsonNode elem : elements) {
                 JsonNode tags = elem.path("tags");
+
+                boolean isHeritage = tags.has("historic") ||
+                                     "ghat".equals(tags.path("man_made").asText()) ||
+                                     "attraction".equals(tags.path("tourism").asText()) ||
+                                     "ghat".equals(tags.path("place").asText()) ||
+                                     "ghat".equals(tags.path("tourism").asText());
+                if (!isHeritage) {
+                    continue;
+                }
+
                 String name = tags.path("name").asText("");
                 if (!name.isEmpty() && !name.equals("Unnamed")) {
                     Map<String, String> site = new HashMap<>();
@@ -229,26 +204,5 @@ public class HeritageLayerProvider implements GisLayerProvider {
             result.put("status", "error");
         }
         return result;
-    }
-
-    private String executeOverpassQuery(String overpassQuery) {
-        String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        headers.setAccept(Collections.singletonList(MediaType.ALL));
-        headers.set("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)");
-        HttpEntity<String> request = new HttpEntity<>(payload, headers);
-
-        synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-            for (String mirror : OVERPASS_MIRRORS) {
-            try {
-                return restTemplate.postForObject(mirror, request, String.class);
-            } catch (Exception e) {
-                log.warn("Overpass mirror failed: {}", mirror);
-            }
-        }
-        }
-        return null;
     }
 }

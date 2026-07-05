@@ -4,18 +4,8 @@ import com.example.webgis.layer.GisLayerProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -23,18 +13,10 @@ import java.util.*;
 public class CommercialPoiLayerProvider implements GisLayerProvider {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient;
+    private final OverpassQueryService overpassQueryService;
 
-    private static final String[] OVERPASS_MIRRORS = {
-            "https://overpass-api.de/api/interpreter",
-            "https://lz4.overpass-api.de/api/interpreter",
-            "https://z.overpass-api.de/api/interpreter"
-    };
-
-    public CommercialPoiLayerProvider() {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+    public CommercialPoiLayerProvider(OverpassQueryService overpassQueryService) {
+        this.overpassQueryService = overpassQueryService;
     }
 
     @Override
@@ -56,22 +38,7 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
     public Map<String, Object> queryPoint(double lon, double lat) {
         Map<String, Object> result = new LinkedHashMap<>();
 
-        String query = String.format(Locale.US,
-                "[out:json][timeout:30];\n" +
-                "(\n" +
-                "  node(around:2000, %f, %f)[shop];\n" +
-                "  node(around:2000, %f, %f)[office];\n" +
-                "  node(around:2000, %f, %f)[industrial];\n" +
-                "  node(around:2000, %f, %f)[building=warehouse];\n" +
-                "  node(around:2000, %f, %f)[amenity=fuel];\n" +
-                "  node(around:2000, %f, %f)[amenity=bank];\n" +
-                "  node(around:2000, %f, %f)[amenity=marketplace];\n" +
-                "  way(around:2000, %f, %f)[building=warehouse];\n" +
-                "  way(around:2000, %f, %f)[landuse=industrial];\n" +
-                ");\n" +
-                "out center;", lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon, lat, lon);
-
-        String jsonResponse = executeOverpassQuery(query);
+        String jsonResponse = overpassQueryService.getUnifiedPointData(lat, lon);
         if (jsonResponse == null) {
             result.put("status", "fallback");
             result.put("totalPoisFound", 0);
@@ -98,8 +65,19 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
 
             for (JsonNode elem : elements) {
                 JsonNode tags = elem.path("tags");
-                String name = tags.path("name").asText("Unnamed Business");
                 
+                // Filter only elements that are commercial/industrial
+                boolean isCommercial = tags.has("shop") || tags.has("office") || tags.has("industrial") || 
+                                       "warehouse".equals(tags.path("building").asText()) || 
+                                       "fuel".equals(tags.path("amenity").asText()) || 
+                                       "bank".equals(tags.path("amenity").asText()) || 
+                                       "marketplace".equals(tags.path("amenity").asText()) ||
+                                       "industrial".equals(tags.path("landuse").asText());
+                if (!isCommercial) {
+                    continue;
+                }
+
+                String name = tags.path("name").asText("Unnamed Business");
                 String primaryType = "other_commercial";
                 if (tags.has("shop")) {
                     shopCount++;
@@ -150,7 +128,7 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
                 nearestPois = nearestPois.subList(0, 20);
             }
 
-            int total = elements.size();
+            int total = nearestPois.size();
             String density = "low";
             if (total > 30) density = "high";
             else if (total > 10) density = "moderate";
@@ -227,36 +205,5 @@ public class CommercialPoiLayerProvider implements GisLayerProvider {
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
         return R * c; // in metres
-    }
-
-    private String executeOverpassQuery(String overpassQuery) {
-        String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
-        synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
-            // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-            for (String mirror : OVERPASS_MIRRORS) {
-                try {
-                    log.info("Querying Overpass mirror for CommercialPoi: {}", mirror);
-                    HttpRequest request = HttpRequest.newBuilder()
-                            .uri(URI.create(mirror))
-                            .timeout(Duration.ofSeconds(10))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)")
-                            .POST(HttpRequest.BodyPublishers.ofString(payload))
-                            .build();
-
-                    HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-                    if (response.statusCode() == 200) {
-                        byte[] bytes = response.body();
-                        return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
-                    } else {
-                        log.warn("Overpass mirror failed for CommercialPoi: {} with status: {}", mirror, response.statusCode());
-                    }
-                } catch (Exception e) {
-                    log.warn("Overpass mirror failed for CommercialPoi: {} due to:", mirror, e);
-                }
-            }
-        }
-        return null;
     }
 }

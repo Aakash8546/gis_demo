@@ -4,18 +4,8 @@ import com.example.webgis.layer.GisLayerProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -23,18 +13,10 @@ import java.util.*;
 public class OsmOverpassLayerProvider implements GisLayerProvider {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final HttpClient httpClient;
+    private final OverpassQueryService overpassQueryService;
 
-    private static final String[] OVERPASS_MIRRORS = {
-            "https://z.overpass-api.de/api/interpreter",
-            "https://overpass-api.de/api/interpreter",
-            "https://lz4.overpass-api.de/api/interpreter"
-    };
-
-    public OsmOverpassLayerProvider() {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+    public OsmOverpassLayerProvider(OverpassQueryService overpassQueryService) {
+        this.overpassQueryService = overpassQueryService;
     }
 
     @Override
@@ -56,18 +38,7 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
     public Map<String, Object> queryPoint(double lon, double lat) {
         Map<String, Object> result = new LinkedHashMap<>();
         
-        // Overpass QL query to find amenities, highways, and waterways within 500m around coordinate
-        String query = String.format(Locale.US,
-                "[out:json][timeout:30];\n" +
-                "(\n" +
-                "  node(around:500, %f, %f)[\"amenity\"];\n" +
-                "  way(around:500, %f, %f)[\"amenity\"];\n" +
-                "  way(around:500, %f, %f)[\"highway\"];\n" +
-                "  way(around:500, %f, %f)[\"waterway\"];\n" +
-                ");\n" +
-                "out tags;", lat, lon, lat, lon, lat, lon, lat, lon);
-
-        String jsonResponse = executeOverpassQuery(query);
+        String jsonResponse = overpassQueryService.getUnifiedPointData(lat, lon);
         if (jsonResponse == null) {
             result.put("status", "error");
             result.put("message", "All Overpass API mirrors failed to respond");
@@ -84,6 +55,12 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
 
             for (JsonNode elem : elements) {
                 JsonNode tags = elem.path("tags");
+
+                boolean isOsm = tags.has("amenity") || tags.has("highway") || tags.has("waterway");
+                if (!isOsm) {
+                    continue;
+                }
+
                 String name = tags.path("name").asText("Unnamed");
                 
                 if (tags.has("amenity")) {
@@ -134,18 +111,7 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
         }
         String polyStr = polyBuilder.toString().trim();
 
-        // Query Overpass to retrieve elements within the polygon boundary
-        String query = String.format(Locale.US,
-                "[out:json][timeout:30];\n" +
-                "(\n" +
-                "  node(poly: \"%s\")[\"amenity\"];\n" +
-                "  way(poly: \"%s\")[\"amenity\"];\n" +
-                "  way(poly: \"%s\")[\"highway\"];\n" +
-                "  way(poly: \"%s\")[\"waterway\"];\n" +
-                ");\n" +
-                "out tags;", polyStr, polyStr, polyStr, polyStr);
-
-        String jsonResponse = executeOverpassQuery(query);
+        String jsonResponse = overpassQueryService.getUnifiedPolygonData(polyStr);
         if (jsonResponse == null) {
             result.put("status", "error");
             result.put("message", "All Overpass API mirrors failed to respond");
@@ -164,6 +130,12 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
 
             for (JsonNode elem : elements) {
                 JsonNode tags = elem.path("tags");
+
+                boolean isOsm = tags.has("amenity") || tags.has("highway") || tags.has("waterway");
+                if (!isOsm) {
+                    continue;
+                }
+
                 String name = tags.path("name").asText("Unnamed");
 
                 if (tags.has("amenity")) {
@@ -202,36 +174,5 @@ public class OsmOverpassLayerProvider implements GisLayerProvider {
         }
 
         return result;
-    }
-
-    private String executeOverpassQuery(String overpassQuery) {
-        String payload = "data=" + URLEncoder.encode(overpassQuery, StandardCharsets.UTF_8);
-        synchronized (com.example.webgis.layer.GisQueryExecutor.class) {
-            // Add a small 150ms delay between consecutive requests to prevent concurrent spikes
-            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
-            for (String mirror : OVERPASS_MIRRORS) {
-                try {
-                    log.info("Querying Overpass mirror: {}", mirror);
-                    HttpRequest request = HttpRequest.newBuilder()
-                            .uri(URI.create(mirror))
-                            .timeout(Duration.ofSeconds(10))
-                            .header("Content-Type", "application/x-www-form-urlencoded")
-                            .header("User-Agent", "VaranasiUrbanPlannerApp/1.0 (Contact: aakashsrivastava2151@gmail.com)")
-                            .POST(HttpRequest.BodyPublishers.ofString(payload))
-                            .build();
-
-                    HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
-                    if (response.statusCode() == 200) {
-                        byte[] bytes = response.body();
-                        return bytes != null ? new String(bytes, StandardCharsets.UTF_8) : null;
-                    } else {
-                        log.warn("Overpass mirror failed: {} with status: {}", mirror, response.statusCode());
-                    }
-                } catch (Exception e) {
-                    log.warn("Overpass mirror failed: {} due to:", mirror, e);
-                }
-            }
-        }
-        return null;
     }
 }
