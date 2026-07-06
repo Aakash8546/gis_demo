@@ -3998,8 +3998,7 @@ out center;`;
                         }
                         return `${raw.toLocaleString()} ${units}`;
                       }
-                      
-                      if (typeof raw === 'string') {
+if (typeof raw === 'string') {
                         if (/^[A-Z]{2,6}$/.test(raw)) {
                           return raw;
                         }
@@ -4010,9 +4009,21 @@ out center;`;
                     };
 
                     return humanFriendlyCards.map((card) => {
-                      const cardFeaturesWithData = card.features.map(f => {
+                      const rawFeatures = card.features.map(f => {
                         const info = getFeatureInfo(f);
                         return { ...f, ...info };
+                      });
+
+                      // Filter features based on mode (point vs polygon) to hide irrelevant "Not detected" stats
+                      const cardFeaturesWithData = rawFeatures.filter(f => {
+                        const isPolygonMode = !!selectedAreaCoords;
+                        if (isPolygonMode) {
+                          // Hide point-only NDVI lookup
+                          return f.key !== 'ndvi_value';
+                        } else {
+                          // Hide polygon-only NDVI aggregate statistics
+                          return !['ndvi_mean', 'ndvi_min', 'ndvi_max', 'ndvi_stddev'].includes(f.key);
+                        }
                       });
 
                       const isExpanded = !!expandedAreaCards[card.id];
@@ -4040,33 +4051,29 @@ out center;`;
                             <div className="border-t border-white/5 p-3 space-y-2 bg-slate-950/20">
                               {cardFeaturesWithData.map((f) => {
                                 const hasData = f.rawVal !== undefined && f.rawVal !== null;
-                                const isSelected = selectedDetailKey === f.key && hasData;
+                                const isSelected = selectedDetailKey === f.key;
                                 return (
                                   <div
                                     key={f.key}
                                     onClick={() => {
-                                      if (hasData) {
-                                        setSelectedDetailKey(prev => prev === f.key ? null : f.key);
-                                      }
+                                      setSelectedDetailKey(prev => prev === f.key ? null : f.key);
                                     }}
-                                    className={`p-2.5 rounded-xl border transition-all select-none space-y-1.5 ${
-                                      !hasData
-                                        ? 'opacity-40 cursor-not-allowed bg-slate-900/5 border-slate-900/5'
-                                        : isSelected
-                                          ? 'bg-amber-500/10 border-amber-500/30 shadow-lg shadow-amber-900/5 cursor-pointer'
-                                          : 'bg-transparent border-transparent hover:bg-slate-800/20 cursor-pointer'
+                                    className={`p-2.5 rounded-xl border transition-all select-none space-y-1.5 cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-amber-500/10 border-amber-500/30 shadow-lg shadow-amber-900/5'
+                                        : 'bg-transparent border-transparent hover:bg-slate-800/20'
                                     }`}
                                   >
                                     <div className="flex justify-between font-medium text-slate-200 text-xs">
                                       <span className="text-[11px] font-semibold tracking-wide text-slate-300">
                                         {f.label}
                                       </span>
-                                      <span className={`font-mono font-bold transition-colors ${!hasData ? 'text-slate-600' : isSelected ? 'text-amber-400' : 'text-cyan-300'}`}>
+                                      <span className={`font-mono font-bold transition-colors ${!hasData ? 'text-slate-500 font-normal' : isSelected ? 'text-amber-400' : 'text-cyan-300'}`}>
                                         {hasData ? formatValue(f.rawVal, f.key, f.units) : "Not detected"}
                                       </span>
                                     </div>
                                     
-                                    <p className="text-[9.5px] text-slate-500 leading-normal">
+                                    <p className={`text-[9.5px] leading-normal ${!hasData ? 'text-slate-500/70' : 'text-slate-500'}`}>
                                       {f.desc}
                                     </p>
 
