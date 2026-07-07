@@ -12,6 +12,8 @@ import java.util.List;
 @Component("MEAN")
 public class MeanAggregationStrategy implements AggregationStrategy {
 
+
+
     @Override
     public Object aggregate(List<GISFeature> features) {
         if (features == null || features.isEmpty()) {
