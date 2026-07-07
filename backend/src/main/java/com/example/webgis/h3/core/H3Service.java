@@ -18,6 +18,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class H3Service {
 
+
+
     private final H3Core h3;
 
     public H3Service() {
