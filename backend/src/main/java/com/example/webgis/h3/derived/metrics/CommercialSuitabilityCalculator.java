@@ -12,6 +12,8 @@ import java.util.Map;
 @Component
 public class CommercialSuitabilityCalculator implements DerivedMetricCalculator {
 
+
+
     @Override
     public String getMetricName() {
         return "suitability_score";
