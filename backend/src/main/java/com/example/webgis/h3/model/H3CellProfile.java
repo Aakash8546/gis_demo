@@ -21,6 +21,8 @@ import java.util.Map;
 @AllArgsConstructor
 public class H3CellProfile {
 
+
+
     @Id
     @Column(name = "h3_index", length = 20)
     private String h3Index;
