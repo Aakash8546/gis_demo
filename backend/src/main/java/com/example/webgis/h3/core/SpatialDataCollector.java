@@ -11,11 +11,11 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 
-/**
- * Normalization collector that queries existing GIS services/database features
- * and structures them into standard GISDatasetObjects.
- * Optimized to run fast local queries and distance approximations for grids.
- */
+
+
+
+
+
 @Service
 @Slf4j
 public class SpatialDataCollector {
@@ -29,15 +29,15 @@ public class SpatialDataCollector {
         this.datasetRegistry = datasetRegistry;
     }
 
-    /**
-     * Collects and normalizes all active datasets for a specific geographic coordinate.
-     * Bypasses slow remote APIs to ensure real-time performance of H3 grid overlay.
-     */
+    
+
+
+
     public List<GISDatasetObject> collectAtCoordinate(double lat, double lon) {
         log.info("Fast-collecting spatial datasets at grid coordinate: ({}, {})", lat, lon);
         List<GISDatasetObject> collected = new ArrayList<>();
 
-        // Fetch local database values (DEM, Slope, LULC) - under 5ms
+        
         Map<String, Object> layersData = new HashMap<>();
         try {
             if (localPostgisProvider != null) {
@@ -47,7 +47,7 @@ public class SpatialDataCollector {
             log.warn("Local PostGIS query failed, using defaults: {}", e.getMessage());
         }
 
-        // Distance from Varanasi city center (25.3176, 82.9739) for fast proxy calculations
+        
         double dist = Math.sqrt(Math.pow(lat - 25.3176, 2) + Math.pow(lon - 82.9739, 2));
 
         for (DatasetDescriptor descriptor : datasetRegistry.getAllDatasets()) {
@@ -64,7 +64,7 @@ public class SpatialDataCollector {
                             double val = ((Number) layersData.get("elevationMeters")).doubleValue();
                             datasetObj.getFeatures().add(new GISFeature(val, lat, lon, Map.of()));
                         } else {
-                            // Realistic default elevation for Varanasi
+                            
                             double mockElev = 80.0 - (dist * 10.0) + (Math.sin(lat * 1000) * 2.0);
                             datasetObj.getFeatures().add(new GISFeature(mockElev, lat, lon, Map.of()));
                         }
@@ -85,7 +85,7 @@ public class SpatialDataCollector {
                         if (layersData.get("lulcClass") != null) {
                             lulc = (String) layersData.get("lulcClass");
                         } else {
-                            // If outside local database bounds, approximate by center distance
+                            
                             if (dist < 0.04) {
                                 lulc = "builtup";
                             } else if (dist < 0.06) {
@@ -98,19 +98,19 @@ public class SpatialDataCollector {
                         break;
 
                     case "roads_count":
-                        // Road density proxy: dense near city center, decays outwards
+                        
                         int roads = Math.max(4, (int) (180 - (dist * 1500)));
                         datasetObj.getFeatures().add(new GISFeature(roads, lat, lon, Map.of()));
                         break;
 
                     case "hospitals_count":
-                        // Hospital count decays quickly outside center
+                        
                         int hosp = Math.max(0, (int) (2 - (dist * 40)));
                         datasetObj.getFeatures().add(new GISFeature(hosp, lat, lon, Map.of()));
                         break;
 
                     case "schools_count":
-                        // School count decays outside center
+                        
                         int schools = Math.max(0, (int) (3 - (dist * 30)));
                         datasetObj.getFeatures().add(new GISFeature(schools, lat, lon, Map.of()));
                         break;

@@ -5,10 +5,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 
-/**
- * Pluggable derived metrics execution engine.
- * Computes complex indexes using plug-and-play calculator components.
- */
+
+
+
+
 @Service
 @Slf4j
 public class DerivedMetricsEngine {
@@ -22,12 +22,12 @@ public class DerivedMetricsEngine {
         log.info("Initialized DerivedMetricsEngine with {} calculators.", calculators.size());
     }
 
-    /**
-     * Computes all derived metrics based on cell's aggregated dataset parameters.
-     *
-     * @param aggregatedData output map from Aggregation Engine
-     * @return Map of derived metric names and their calculated double values
-     */
+    
+
+
+
+
+
     public Map<String, Object> calculateMetrics(Map<String, Object> aggregatedData) {
         Map<String, Object> metrics = new LinkedHashMap<>();
         if (aggregatedData == null || aggregatedData.isEmpty()) {
@@ -37,7 +37,7 @@ public class DerivedMetricsEngine {
         for (Map.Entry<String, DerivedMetricCalculator> entry : calculators.entrySet()) {
             try {
                 double score = entry.getValue().calculate(aggregatedData);
-                // Round score to 3 decimal places for clean storage
+                
                 double rounded = Math.round(score * 1000.0) / 1000.0;
                 metrics.put(entry.getKey(), rounded);
             } catch (Exception e) {
@@ -49,9 +49,9 @@ public class DerivedMetricsEngine {
         return metrics;
     }
 
-    /**
-     * Gets description metadata about all active calculators.
-     */
+    
+
+
     public Map<String, String> getMetricsMetadata() {
         Map<String, String> metadata = new LinkedHashMap<>();
         calculators.forEach((name, calc) -> metadata.put(name, calc.getDescription()));

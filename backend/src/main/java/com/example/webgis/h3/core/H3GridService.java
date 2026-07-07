@@ -17,10 +17,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * Orchestrator service running the complete spatial processing pipeline:
- * Lat/Lon -> Cell ID -> Collectors -> Registry -> Aggregator -> Stats -> Derived Metrics -> Cache -> Profile.
- */
+
+
+
+
 @Service
 @Slf4j
 public class H3GridService {
@@ -43,26 +43,26 @@ public class H3GridService {
         this.profileRepository = profileRepository;
     }
 
-    /**
-     * Retrieves or generates the full H3 profile for a given coordinate.
-     * Uses DB caching with 24h TTL.
-     *
-     * @param lat        latitude
-     * @param lon        longitude
-     * @param resolution H3 resolution
-     * @return H3CellProfile spatial unit
-     */
+    
+
+
+
+
+
+
+
+
     public H3CellProfile getOrCreateProfileAtCoordinate(double lat, double lon, int resolution) {
-        // 1. Identify H3 Cell ID
+        
         String cellId = h3Service.latLonToH3(lat, lon, resolution);
         return getOrCreateProfile(cellId, lat, lon, resolution);
     }
 
-    /**
-     * Retrieves or generates the profile for a direct H3 cell ID.
-     */
+    
+
+
     public H3CellProfile getOrCreateProfile(String cellId, Double fallbackLat, Double fallbackLon, int resolution) {
-        // 2. Check Database Cache First
+        
         Optional<H3CellProfile> cachedProfile = profileRepository.findById(cellId);
         if (cachedProfile.isPresent()) {
             H3CellProfile profile = cachedProfile.get();
@@ -73,33 +73,33 @@ public class H3GridService {
             log.info("Cache expired for H3 Cell Profile: {}. Regenerating.", cellId);
         }
 
-        // Find cell center if coordinates are fallback/missing
+        
         double centerLat = fallbackLat != null ? fallbackLat : h3Service.h3ToLatLon(cellId)[0];
         double centerLon = fallbackLon != null ? fallbackLon : h3Service.h3ToLatLon(cellId)[1];
 
         log.info("Cache miss for H3 Cell Profile: {}. Processing spatial pipeline...", cellId);
 
-        // 3. Spatial Data Collector (Collect & Normalize)
+        
         List<GISDatasetObject> collectedData = collector.collectAtCoordinate(centerLat, centerLon);
 
-        // 4. Aggregation Engine
+        
         Map<String, Object> aggregatedData = aggregationEngine.aggregate(collectedData);
 
-        // 5. Derived Metrics Engine
+        
         Map<String, Object> derivedMetrics = derivedMetricsEngine.calculateMetrics(aggregatedData);
 
-        // 6. Build JTS Geometry boundary polygon
+        
         List<double[]> boundaryVertices = h3Service.cellBoundary(cellId);
         Coordinate[] jtsCoords = new Coordinate[boundaryVertices.size() + 1];
         for (int i = 0; i < boundaryVertices.size(); i++) {
             double[] vertex = boundaryVertices.get(i);
-            jtsCoords[i] = new Coordinate(vertex[1], vertex[0]); // JTS constructor is (lon, lat)
+            jtsCoords[i] = new Coordinate(vertex[1], vertex[0]); 
         }
-        // Close polygon ring
+        
         jtsCoords[boundaryVertices.size()] = jtsCoords[0];
         Polygon boundaryGeom = GEOMETRY_FACTORY.createPolygon(jtsCoords);
 
-        // 7. Store Profile in Cache (Expires in 24 hours)
+        
         H3CellProfile newProfile = H3CellProfile.builder()
                 .h3Index(cellId)
                 .resolution(resolution)
@@ -107,7 +107,7 @@ public class H3GridService {
                 .centerLon(centerLon)
                 .boundaryGeom(boundaryGeom)
                 .aggregatedData(aggregatedData)
-                .statisticalData(new HashMap<>()) // Default empty statistics
+                .statisticalData(new HashMap<>()) 
                 .derivedMetrics(derivedMetrics)
                 .expiresAt(Instant.now().plus(24, ChronoUnit.HOURS))
                 .build();
@@ -115,24 +115,24 @@ public class H3GridService {
         return profileRepository.save(newProfile);
     }
 
-    /**
-     * Processes H3 grid collection inside an AOI polygon boundary.
-     *
-     * @param polygonCoords Outer ring vertices of the polygon
-     * @param resolution    Target H3 resolution
-     * @return List of H3CellProfile records
-     */
+    
+
+
+
+
+
+
     public List<H3CellProfile> getProfilesForPolygon(List<List<Double>> polygonCoords, int resolution) {
         log.info("Generating H3 Grid for polygon with {} coordinates", polygonCoords.size());
         
-        // 1. Get polyfilled cells (Cap to max 200 cells to prevent thread concurrency OOM)
+        
         List<String> cells = h3Service.polyfill(polygonCoords, resolution);
         if (cells.size() > 200) {
             log.warn("Polyfill returned {} cells. Truncating to 200 for stability.", cells.size());
             cells = cells.subList(0, 200);
         }
 
-        // 2. Fetch or generate cell profiles (parallel collection lookup)
+        
         return cells.parallelStream()
                 .map(cellId -> {
                     try {

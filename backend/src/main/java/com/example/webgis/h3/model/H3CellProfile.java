@@ -10,9 +10,9 @@ import org.locationtech.jts.geom.Polygon;
 import java.time.Instant;
 import java.util.Map;
 
-/**
- * JPA Entity representing the spatial intelligence profile of a single H3 Cell.
- */
+
+
+
 @Entity
 @Table(name = "h3_cell_profiles")
 @Data

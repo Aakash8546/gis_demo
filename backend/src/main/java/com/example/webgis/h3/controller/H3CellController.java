@@ -12,9 +12,9 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * REST API controller exposing analytical H3 cell operations and profiles.
- */
+
+
+
 @RestController
 @RequestMapping("/api/h3")
 @CrossOrigin(origins = "*")
@@ -31,16 +31,16 @@ public class H3CellController {
         this.profileRepository = profileRepository;
     }
 
-    /**
-     * Query and generate spatial grid overlay based on point or polygon area inputs.
-     */
+    
+
+
     @PostMapping("/query")
     public ResponseEntity<?> queryGrid(@RequestBody H3GridRequest request) {
         log.info("Request to query spatial H3 grid overlay...");
         int resolution = request.resolution() != null ? request.resolution() : 9;
 
         try {
-            // Case A: Polygon AOI area polyfill
+            
             if (request.polygon() != null && !request.polygon().isEmpty()) {
                 List<H3CellProfile> profiles = h3GridService.getProfilesForPolygon(request.polygon(), resolution);
                 List<H3GridResponse.CellInfo> cells = profiles.stream()
@@ -64,7 +64,7 @@ public class H3CellController {
                 return ResponseEntity.ok(response);
             }
 
-            // Case B: Point query with neighbors k-ring expansion
+            
             if (request.latitude() == null || request.longitude() == null) {
                 return ResponseEntity.badRequest().body(Map.of("error", "latitude/longitude or polygon coords are required"));
             }

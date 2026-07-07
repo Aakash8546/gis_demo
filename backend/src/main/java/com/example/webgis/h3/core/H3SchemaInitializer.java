@@ -6,10 +6,10 @@ import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-/**
- * Initializes the required PostgreSQL/PostGIS database tables for the H3 Grid intelligence layer.
- * Runs automatically when the application context is ready.
- */
+
+
+
+
 @Service
 @Slf4j
 public class H3SchemaInitializer {
@@ -24,10 +24,10 @@ public class H3SchemaInitializer {
     public void initializeSchema() {
         log.info("Starting database schema initialization for H3 Grid layer...");
         try {
-            // 1. Create PostGIS extension if not exists (in case not present)
+            
             jdbcTemplate.execute("CREATE EXTENSION IF NOT EXISTS postgis");
 
-            // 2. Create h3_cell_profiles table
+            
             jdbcTemplate.execute(
                 "CREATE TABLE IF NOT EXISTS h3_cell_profiles (" +
                 "    h3_index          VARCHAR(20) PRIMARY KEY," +
@@ -44,10 +44,10 @@ public class H3SchemaInitializer {
             );
             log.info("Table 'h3_cell_profiles' verified/created successfully.");
 
-            // 3. Create spatial index for fast geo-queries
+            
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_h3_cell_profiles_geom ON h3_cell_profiles USING gist(boundary_geom)");
 
-            // 4. Create historical snapshots table for temporal analytics support
+            
             jdbcTemplate.execute(
                 "CREATE TABLE IF NOT EXISTS h3_cell_historical_snapshots (" +
                 "    id                BIGSERIAL PRIMARY KEY," +

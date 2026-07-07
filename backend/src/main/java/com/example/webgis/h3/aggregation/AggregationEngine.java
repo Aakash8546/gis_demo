@@ -8,10 +8,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 
-/**
- * Coordination engine that matches datasets to aggregation strategies
- * and processes raw features into structured maps.
- */
+
+
+
+
 @Service
 @Slf4j
 public class AggregationEngine {
@@ -27,12 +27,12 @@ public class AggregationEngine {
         log.info("Initialized AggregationEngine with {} strategies.", strategies.size());
     }
 
-    /**
-     * Aggregates normalized dataset objects inside a cell boundary.
-     *
-     * @param datasets raw GIS dataset objects
-     * @return Map of aggregated features
-     */
+    
+
+
+
+
+
     public Map<String, Object> aggregate(List<GISDatasetObject> datasets) {
         Map<String, Object> aggregatedMap = new LinkedHashMap<>();
         if (datasets == null || datasets.isEmpty()) {

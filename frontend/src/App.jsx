@@ -75,7 +75,7 @@ import {
   isPointInPolygon
 } from './utils/spatial';
 
-// Error Boundary to prevent white screen crashes
+
 import React from 'react';
 class DecisionPanelErrorBoundary extends React.Component {
   constructor(props) {
@@ -117,7 +117,7 @@ const AMENITY_CATEGORIES = {
   'Transportation': { icon: Train, color: 'text-indigo-400 bg-indigo-400/10 border-indigo-400/20' }
 };
 
-// Well-known LULC semantic colors (seed palette for known classes)
+
 const LULC_KNOWN_COLORS = {
   Water:               '#419BDF',
   Trees:               '#397D49',
@@ -136,19 +136,19 @@ const LULC_KNOWN_COLORS = {
   Scrubland:           '#D97706',
 };
 
-// Deterministic color generator: produces a stable unique hex color from a class name string.
+
 function generateClassColor(className, existingColors = {}) {
   if (LULC_KNOWN_COLORS[className]) return LULC_KNOWN_COLORS[className];
-  // Hash the class name to get a stable hue
+  
   let hash = 0;
   for (let i = 0; i < className.length; i++) {
     hash = className.charCodeAt(i) + ((hash << 5) - hash);
     hash |= 0;
   }
-  // Distribute hue across 360° avoiding near-grey ranges
+  
   const hue = Math.abs(hash) % 360;
-  const saturation = 55 + (Math.abs(hash >> 4) % 25); // 55–80%
-  const lightness  = 45 + (Math.abs(hash >> 8) % 15); // 45–60%
+  const saturation = 55 + (Math.abs(hash >> 4) % 25); 
+  const lightness  = 45 + (Math.abs(hash >> 8) % 15); 
   const hex = hslToHex(hue, saturation, lightness);
   return hex;
 }
@@ -164,7 +164,7 @@ function hslToHex(h, s, l) {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-// Build a full className→hex map from an array of class names.
+
 function buildLulcColorMap(classNames) {
   const map = {};
   for (const name of classNames) {
@@ -173,7 +173,7 @@ function buildLulcColorMap(classNames) {
   return map;
 }
 
-// Hex → rgba with given alpha (0-1)
+
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1,3), 16);
   const g = parseInt(hex.slice(3,5), 16);
@@ -229,7 +229,7 @@ const groupRelationships = (relationships, entities) => {
 const calculateSuitabilityDetails = (summary) => {
   if (!summary) return null;
 
-  // 1. Road Proximity Score
+  
   const roadDist = summary.nearestRoadDist !== undefined ? summary.nearestRoadDist : -1;
   let roadScore = 0;
   let roadLabel = "No Road Detected";
@@ -253,7 +253,7 @@ const calculateSuitabilityDetails = (summary) => {
     roadLabel = "Unknown distance";
   }
 
-  // 2. Healthcare Access Score
+  
   const hospCount = summary.hospitalsCount || 0;
   let healthScore = 0;
   let healthLabel = "No Clinics/Hospitals";
@@ -268,7 +268,7 @@ const calculateSuitabilityDetails = (summary) => {
     healthLabel = "Sub-optimal (0 in radius)";
   }
 
-  // 3. Educational Access Score
+  
   const schoolCount = summary.schoolsCount || 0;
   let eduScore = 0;
   let eduLabel = "No Schools";
@@ -283,7 +283,7 @@ const calculateSuitabilityDetails = (summary) => {
     eduLabel = "Sub-optimal (0 in radius)";
   }
 
-  // 4. Flood Risk Safety Score (Inverted: low risk = high score)
+  
   const floodRisk = summary.floodRisk || "Low";
   let safetyScore = 100;
   let safetyLabel = "Low Risk (Safe)";
@@ -295,7 +295,7 @@ const calculateSuitabilityDetails = (summary) => {
     safetyLabel = "Medium Risk (Caution)";
   }
 
-  // Calculate overall weighted score
+  
   const overallScore = Math.round(
     (roadScore * 0.3) +
     (healthScore * 0.25) +
@@ -723,23 +723,23 @@ function App() {
   const [currentCity, setCurrentCity] = useState('Varanasi');
   const cityCache = useRef({});
 
-  // Live Area Intelligence Hooks
+  
   const [liveAmenities, setLiveAmenities] = useState(null);
   const [liveAmenitiesLoading, setLiveAmenitiesLoading] = useState(false);
   const [liveAmenitiesError, setLiveAmenitiesError] = useState('');
 
-  // LULC Analysis Hooks
+  
   const [lulcData, setLulcData] = useState(null);
   const [lulcLoading, setLulcLoading] = useState(false);
   const [lulcError, setLulcError] = useState('');
-  // Dynamic class → hex color mapping (auto-built from returned features)
+  
   const [lulcClassColorMap, setLulcClassColorMap] = useState({});
-  // Mutable ref so the OL style fn always sees the latest map
+  
   const lulcColorMapRef = useRef({});
-  // LULC layer controls
+  
   const [lulcLayerVisible, setLulcLayerVisible] = useState(true);
   const [lulcLayerOpacity, setLulcLayerOpacity] = useState(0.75);
-  // Hover tooltip for LULC features
+  
   const [lulcHoveredClass, setLulcHoveredClass] = useState(null);
   const [lulcHighlightedFeature, setLulcHighlightedFeature] = useState(null);
   const [localNews, setLocalNews] = useState([]);
@@ -754,8 +754,8 @@ function App() {
   const [bhuvanGeomorphActive, setBhuvanGeomorphActive] = useState(false);
   const [bhuvanWastelandActive, setBhuvanWastelandActive] = useState(false);
 
-  const [activeSidebarTab, setActiveSidebarTab] = useState('layers'); // 'layers', 'analysis', 'decision'
-  const [activeAnalysisSubTab, setActiveAnalysisSubTab] = useState('lulc'); // 'lulc', 'insights'
+  const [activeSidebarTab, setActiveSidebarTab] = useState('layers'); 
+  const [activeAnalysisSubTab, setActiveAnalysisSubTab] = useState('lulc'); 
   const [knowledgeContext, setKnowledgeContext] = useState(null);
   const [knowledgeLoading, setKnowledgeLoading] = useState(false);
   const [knowledgeError, setKnowledgeError] = useState(null);
@@ -771,7 +771,7 @@ function App() {
   const h3LayerRef = useRef(null);
   const fetchH3GridRef = useRef(null);
   const [decisionSubTab, setDecisionSubTab] = useState('general');
-  const [knowledgeRadius, setKnowledgeRadius] = useState(2000); // default 2km (in meters)
+  const [knowledgeRadius, setKnowledgeRadius] = useState(2000); 
   const [showBuffer, setShowBuffer] = useState(true);
   const [expandedAreaCards, setExpandedAreaCards] = useState({});
   const [showKgVisualizer, setShowKgVisualizer] = useState(false);
@@ -779,7 +779,7 @@ function App() {
   const [polygonKnowledgeLoading, setPolygonKnowledgeLoading] = useState(false);
   const [polygonKnowledgeError, setPolygonKnowledgeError] = useState(null);
 
-  // Location Intelligence State
+  
   const [intelDialogOpen, setIntelDialogOpen] = useState(false);
   const [intelDraft, setIntelDraft] = useState({ latitude: null, longitude: null, text: '' });
   const [intelLoading, setIntelLoading] = useState(false);
@@ -791,7 +791,7 @@ function App() {
   const intelLayerRef = useRef(null);
   const intelModeRef = useRef(false);
   const intelEntitiesRef = useRef([]);
-  // Track previous sidebar tab so we only clear decision support state when LEAVING it
+  
   const prevSidebarTabRef = useRef(null);
 
   useEffect(() => {
@@ -818,7 +818,7 @@ function App() {
     if (!geom) return null;
     const rings = geom.getCoordinates();
     if (!rings || rings.length === 0) return null;
-    const coords = rings[0]; // Outer ring coordinates (EPSG:3857)
+    const coords = rings[0]; 
     if (!coords) return null;
     return coords.map((c) => toLonLat(c));
   }, [selectedAreaPolygon]);
@@ -865,7 +865,7 @@ function App() {
       }
     }
 
-    // Default: Check if the feature has coordinate metadata
+    
     const destLat = targetFeature?.metadata?.latitude;
     const destLon = targetFeature?.metadata?.longitude;
 
@@ -901,7 +901,7 @@ function App() {
         }
       }
     } else {
-      // Area-based features: fit map to the AOI boundary!
+      
       if (mapRef.current) {
         const drawFeatures = drawSourceRef.current ? drawSourceRef.current.getFeatures() : [];
         const activePolygon = drawFeatures.find(f => f.getGeometry()?.getType() === 'Polygon');
@@ -929,7 +929,7 @@ function App() {
     }
   }, [selectedDetailKey, spatialFeatures, selectedCoordinates, selectedAreaCoords]);
 
-  // Synchronize selection point marker and query buffer circle on the map
+  
   useEffect(() => {
     if (!selectedPointSourceRef.current) return;
     selectedPointSourceRef.current.clear();
@@ -937,7 +937,7 @@ function App() {
     if (selectedCoordinates) {
       const coords = fromLonLat(selectedCoordinates);
 
-      // 1. Add center marker
+      
       selectedPointSourceRef.current.addFeature(
         new Feature({
           geometry: new Point(coords),
@@ -945,7 +945,7 @@ function App() {
         })
       );
 
-      // 2. Add query radius buffer circle overlay
+      
       if (showBuffer && activeSidebarTab === 'decision') {
         selectedPointSourceRef.current.addFeature(
           new Feature({
@@ -957,12 +957,12 @@ function App() {
     }
   }, [selectedCoordinates, knowledgeRadius, showBuffer, activeSidebarTab]);
 
-  // Clear Decision Support overlays only when LEAVING the decision tab — not when arriving at intel or others
+  
   useEffect(() => {
     intelModeRef.current = (activeSidebarTab === 'intel');
 
 
-    // Only clear decision-support overlays when the tab we are LEAVING is 'decision'
+    
     const prevTab = prevSidebarTabRef.current;
     if (prevTab === 'decision' && activeSidebarTab !== 'decision') {
       setSelectedCoordinates(null);
@@ -1011,7 +1011,7 @@ function App() {
     }
   }, [decisionSupportModeEnabled]);
 
-  // Synchronize dynamic Decision Support pins on the map
+  
   useEffect(() => {
     if (!decisionSupportPinsSourceRef.current) return;
     decisionSupportPinsSourceRef.current.clear();
@@ -1067,7 +1067,7 @@ function App() {
       }
     });
 
-    // Auto-fit the map view to the extent of the pinned features
+    
     if (matchingEntities.length > 0 && mapRef.current) {
       const extent = decisionSupportPinsSourceRef.current.getExtent();
       if (extent && extent.length === 4 && !isNaN(extent[0])) {
@@ -1090,7 +1090,7 @@ function App() {
     }
   }, [selectedStatsCategory, knowledgeContext]);
 
-  // Synchronize clicked relationship target on the map
+  
   useEffect(() => {
     if (!clickedRelationshipTargetSourceRef.current) return;
     clickedRelationshipTargetSourceRef.current.clear();
@@ -1106,7 +1106,7 @@ function App() {
     }
   }, [activeRelationshipTarget]);
 
-  // Set default fact sheet node when knowledgeContext loads
+  
   useEffect(() => {
     if (knowledgeContext && knowledgeContext.entities && knowledgeContext.entities.length > 0) {
       setSelectedFactSheetNode(knowledgeContext.entities[0]);
@@ -1115,7 +1115,7 @@ function App() {
     }
   }, [knowledgeContext]);
 
-  // Synchronize Location Intelligence entities on the map
+  
   useEffect(() => {
     if (!intelSourceRef.current) return;
     intelSourceRef.current.clear();
@@ -1136,7 +1136,7 @@ function App() {
   const lulcLayerRef = useRef(
     new VectorLayer({
       source: lulcSourceRef.current,
-      // Style reads dynamically from lulcColorMapRef (always fresh, no closure stale issue)
+      
       style: (feature) => {
         const className = feature.get('className');
         const isHighlighted = feature.get('_lulcHighlighted');
@@ -1324,7 +1324,7 @@ out center;`;
       setLulcData(data);
 
       if (data.geojson) {
-        // Backend returns geojson as a JSON string (double-encoded) — parse it first
+        
         const geojsonObj = typeof data.geojson === 'string'
           ? JSON.parse(data.geojson)
           : data.geojson;
@@ -1338,24 +1338,24 @@ out center;`;
 
         console.log('[LULC] OL features parsed:', features.length);
 
-        // === Dynamic color map ===
-        // 1. Collect unique class names from features + from stats classes
+        
+        
         const classNamesFromFeatures = features.map(f => f.get('className')).filter(Boolean);
         const classNamesFromStats = (data.classes || []).map(c => c.className).filter(Boolean);
         const allUniqueClasses = [...new Set([...classNamesFromFeatures, ...classNamesFromStats])];
 
-        // 2. Build deterministic color map
+        
         const colorMap = buildLulcColorMap(allUniqueClasses);
 
-        // 3. Persist to ref (for the OL style function) and to state (for sidebar legend)
+        
         lulcColorMapRef.current = colorMap;
         setLulcClassColorMap(colorMap);
 
-        // 4. Add features to source (style fn will pick up colors from ref)
+        
         lulcSourceRef.current.addFeatures(features);
-        lulcLayerRef.current.changed(); // force re-render
+        lulcLayerRef.current.changed(); 
       } else if (data.classes && data.classes.length > 0) {
-        // No geometries but we have class stats — still build color map for sidebar
+        
         const allUniqueClasses = [...new Set(data.classes.map(c => c.className).filter(Boolean))];
         const colorMap = buildLulcColorMap(allUniqueClasses);
         lulcColorMapRef.current = colorMap;
@@ -1369,7 +1369,7 @@ out center;`;
     }
   };
 
-  // Auto-dismiss status messages after 5 seconds
+  
   const statusTimeoutRef = useRef(null);
   const showStatus = useCallback((message) => {
     setStatusMessage(message);
@@ -1434,7 +1434,7 @@ out center;`;
       console.log("H3 data cells received:", data.cells?.length, data.cells);
       setH3GridData(data);
       
-      // Render Hexagons on map layer
+      
       if (h3LayerRef.current) {
         console.log("h3LayerRef.current exists, visibility:", h3LayerRef.current.getVisible());
         const source = h3LayerRef.current.getSource();
@@ -1443,7 +1443,7 @@ out center;`;
         const features = data.cells.map(cell => {
           const coordinates = cell.boundary.map(pt => fromLonLat([pt[1], pt[0]]));
           if (coordinates.length > 0) {
-            coordinates.push(coordinates[0]); // Close polygon loop
+            coordinates.push(coordinates[0]); 
           }
           const feature = new Feature({
             geometry: new Polygon([coordinates])
@@ -1452,7 +1452,7 @@ out center;`;
           feature.set('derivedMetrics', cell.derivedMetrics);
           feature.set('aggregatedData', cell.aggregatedData);
           
-          // Apply clean sky-blue outline style, optionally with cell ID labels
+          
           const textStyle = h3LabelsVisible ? new Text({
             text: cell.h3Index,
             font: 'bold 9px monospace',
@@ -1540,7 +1540,7 @@ out center;`;
       setKnowledgeContext(knowledgeData);
       setSpatialFeatures(featuresData);
       
-      // Auto-trigger H3 grid overlay query on every point click or polygon selection
+      
       if (isPolygon) {
         fetchH3Grid(null, null, lonLatOrPolygon);
       } else {
@@ -1620,7 +1620,7 @@ out center;`;
       const targetCoords = fromLonLat([targetLon, targetLat]);
       const centerCoords = fromLonLat(selectedCoordinates);
 
-      // Create dashed connection line
+      
       const lineGeom = new LineString([centerCoords, targetCoords]);
       const lineFeature = new Feature({ geometry: lineGeom });
       lineFeature.setStyle(
@@ -1633,7 +1633,7 @@ out center;`;
         })
       );
 
-      // Create target point marker
+      
       const pointFeature = new Feature({ geometry: new Point(targetCoords) });
       pointFeature.setStyle([
         new Style({
@@ -1708,7 +1708,7 @@ out center;`;
     }
   }, []);
 
-  // Auto-clear the elevation popup whenever the user exits elevation query mode
+  
   useEffect(() => {
     if (!elevationQueryMode) {
       setElevationQueryResult(null);
@@ -1726,18 +1726,18 @@ out center;`;
         const lon = window.Cesium.Math.toDegrees(cartographic.longitude);
         const lat = window.Cesium.Math.toDegrees(cartographic.latitude);
         const height = cartographic.height;
-        // Guard: height could be 0 or negative from Cesium underground positions
+        
         const rawZoom = isFinite(height) && height > 0 ? Math.log2(35000000 / height) : 13;
         const zoomLevel = Math.max(2, Math.min(20, rawZoom));
 
-        // Validate coordinates before using them
+        
         const safeLon = isFinite(lon) ? lon : 82.9739;
         const safeLat = isFinite(lat) ? lat : 25.3176;
 
         setMapCenter([safeLon, safeLat]);
         setMapZoom(zoomLevel);
 
-        // Directly update OL view without triggering map re-init
+        
         if (mapRef.current) {
           const view = mapRef.current.getView();
           view.setCenter(fromLonLat([safeLon, safeLat]));
@@ -1777,7 +1777,7 @@ out center;`;
       const features = geojsonObj?.features || [];
       features.forEach((feature) => {
         if (feature && feature.geometry && feature.geometry.type === 'Point') {
-          const coords = feature.geometry.coordinates; // Lon, Lat
+          const coords = feature.geometry.coordinates; 
           if (Array.isArray(coords) && coords.length >= 2) {
             list.push({
               id: feature.id || `${layer.id}-${list.length}`,
@@ -1835,13 +1835,13 @@ out center;`;
     }
   };
 
-  // Use a stable ref to hold the debounce timer for city name lookups
+  
   const cityNameTimerRef = useRef(null);
   const updateCityName = useCallback((lonLat) => {
     if (cityNameTimerRef.current) clearTimeout(cityNameTimerRef.current);
     cityNameTimerRef.current = setTimeout(async () => {
       const [lon, lat] = lonLat;
-      // Instant bounding box detection for Varanasi (helps offline and startup)
+      
       if (lon >= 82.85 && lon <= 83.15 && lat >= 25.20 && lat <= 25.40) {
         setCurrentCity('Varanasi');
         return;
@@ -1879,14 +1879,14 @@ out center;`;
     elevationQueryModeRef.current = elevationQueryMode;
   }, [elevationQueryMode]);
 
-  // NOTE: selectedCoordinates no longer drives mapCenter to prevent the
-  // map useEffect from re-running (and re-creating the OL map) on every click.
+  
+  
 
   useEffect(() => {
     async function loadLayers() {
       setLayers([]);
       setStatusMessage('Create a layer and add markers to begin.');
-      // Note: initial status intentionally persists as an onboarding hint.
+      
     }
 
     loadLayers();
@@ -1922,14 +1922,14 @@ out center;`;
     
     setIsSearching(true);
 
-    // Coordinate regex matching (e.g. "25.3176, 82.9739" or "25.3176 82.9739")
+    
     const coordRegex = /^\s*([+-]?\d+(?:\.\d+)?)\s*[\s,]\s*([+-]?\d+(?:\.\d+)?)\s*$/;
     const match = searchQuery.match(coordRegex);
     if (match) {
       const val1 = parseFloat(match[1]);
       const val2 = parseFloat(match[2]);
       
-      // Determine coordinate order using India bounds: Lat [5, 40], Lon [60, 100]
+      
       let lat, lon;
       if (val1 >= 5 && val1 <= 40 && val2 >= 60 && val2 <= 100) {
         lat = val1;
@@ -1994,8 +1994,8 @@ out center;`;
     openFeatureDialogRef.current = openFeatureDialog;
   }, [fetchKnowledgeContext, fetchH3Grid, queryPointElevation, openFeatureDialog]);
 
-  // The map is only created ONCE (no deps on mapCenter or layers to prevent re-init).
-  // Layer management is handled by a separate useEffect.
+  
+  
   useEffect(() => {
     if (mapRef.current || !mapElementRef.current || !tooltipRef.current || !hoverTooltipRef.current) {
       return;
@@ -2123,7 +2123,7 @@ out center;`;
       style: (feature) => {
         const name = feature.get('name') || '';
         return [
-          // Outer glowing amber ring
+          
           new Style({
             image: new CircleStyle({
               radius: 16,
@@ -2131,7 +2131,7 @@ out center;`;
               stroke: new Stroke({ color: '#f59e0b', width: 2, lineDash: [4, 4] })
             })
           }),
-          // Inner core amber point
+          
           new Style({
             image: new CircleStyle({
               radius: 6,
@@ -2163,7 +2163,7 @@ out center;`;
       source: drawSourceRef.current,
       style: (feature) => {
         const geometryType = feature.getGeometry()?.getType();
-        // Nearly transparent fill so the LULC layer above is visible inside the polygon
+        
         const fillColor = 'rgba(168, 85, 247, 0.04)';
         const strokeColor = '#a855f7';
         if (geometryType === 'Point') {
@@ -2258,7 +2258,7 @@ out center;`;
           basemapLayersRef.current.satellite,
           basemapLayersRef.current.satelliteLabels,
           basemapLayersRef.current.varanasi_mbtiles,
-          lulcLayerRef.current, // Render LULC below interactive overlays so vector highlights are visible!
+          lulcLayerRef.current, 
           h3Layer,
           highlightLayer, selectedPointLayer, detailHighlightLayer, distanceMeasureLayer,
           drawLayer,
@@ -2290,7 +2290,7 @@ out center;`;
       let foundLulcClass = null;
 
       map.forEachFeatureAtPixel(pixel, (feature, layer) => {
-        // Check for LULC features first
+        
         if (!foundLulcClass && layer && layer === lulcLayerRef.current) {
           const cn = feature.get('className');
           if (cn) foundLulcClass = cn;
@@ -2307,7 +2307,7 @@ out center;`;
         }
       });
 
-      // Update LULC hover state
+      
       setLulcHoveredClass(foundLulcClass || null);
 
       if (foundMarker) {
@@ -2331,14 +2331,14 @@ out center;`;
       }
     });
 
-    // Single consolidated click handler — prevents duplicate execution from both 'singleclick' + 'click'
+    
     map.on('singleclick', (event) => {
       const coordinates = toLonLat(event.coordinate);
       setSelectedCoordinates(coordinates);
       setSelectedStatsCategory(null);
       tooltipOverlay.setPosition(event.coordinate);
 
-      // Clear any drawn polygon since we are doing a point click query
+      
       if (drawSourceRef.current) {
         drawSourceRef.current.clear();
       }
@@ -2360,7 +2360,7 @@ out center;`;
         return;
       }
 
-      // Check if we hit an AI location intelligence marker
+      
       let hitIntel = null;
       map.forEachFeatureAtPixel(event.pixel, (feature, layer) => {
         if (!hitIntel && layer === intelLayerRef.current) hitIntel = feature;
@@ -2385,7 +2385,7 @@ out center;`;
         return;
       }
 
-      // Fetch dynamic Knowledge Context
+      
       if (decisionSupportModeRef.current && fetchKnowledgeContextRef.current) {
         fetchKnowledgeContextRef.current(coordinates);
       } else if (fetchH3GridRef.current) {
@@ -2393,14 +2393,14 @@ out center;`;
         fetchH3GridRef.current(lat, lon);
       }
 
-      // Check for LULC feature click — highlight it
+      
       let lulcHit = null;
       map.forEachFeatureAtPixel(event.pixel, (feature, layer) => {
         if (!lulcHit && layer === lulcLayerRef.current) lulcHit = feature;
       });
 
       if (lulcHit) {
-        // Clear previous LULC highlight
+        
         lulcSourceRef.current.getFeatures().forEach(f => f.set('_lulcHighlighted', false));
         lulcHit.set('_lulcHighlighted', true);
         setLulcHighlightedFeature(lulcHit.get('className'));
@@ -2408,7 +2408,7 @@ out center;`;
         return;
       }
 
-      // Find if we hit a Point feature on a data or incident layer at the clicked pixel
+      
       let hitMarkerFeature = null;
       let hitMarkerLayer = null;
       map.forEachFeatureAtPixel(event.pixel, (feature, layer) => {
@@ -2448,7 +2448,7 @@ out center;`;
         return;
       }
 
-      // If we didn't hit a marker point, check if we hit any general feature to highlight
+      
       let hitGeneralFeature = null;
       map.forEachFeatureAtPixel(event.pixel, (feature, layer) => {
         if (!hitGeneralFeature && layer && layer.get('kind') === 'data') {
@@ -2481,11 +2481,11 @@ out center;`;
 
     mapRef.current = map;
     window.map = map;
-  // IMPORTANT: This effect must NOT depend on mapCenter or layers.
-  // - mapCenter is only used to seed the initial view once at mount time (L1184).
-  // - Layer changes are handled separately in the layer-sync useEffect below.
-  // Adding either as a dep causes the entire OL map to be destroyed and re-created on every click.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  
+  
+  
+  
+  
   }, []);
 
   useEffect(() => {
@@ -2543,7 +2543,7 @@ out center;`;
       return;
     }
 
-    // Add highlight rings for selected markers
+    
     selectedMarkersForDistance.forEach((marker) => {
       const geom = new Point(fromLonLat(marker.coordinates));
       const feature = new Feature({ geometry: geom });
@@ -2551,7 +2551,7 @@ out center;`;
       source.addFeature(feature);
     });
 
-    // Add connecting dashed line
+    
     if (selectedMarkersForDistance.length === 2) {
       const c1 = fromLonLat(selectedMarkersForDistance[0].coordinates);
       const c2 = fromLonLat(selectedMarkersForDistance[1].coordinates);
@@ -2569,10 +2569,10 @@ out center;`;
 
     const map = mapRef.current;
 
-    // Get active layer IDs
+    
     const activeLayerIds = new Set(layers.map(l => l.id));
 
-    // Remove deleted layers from the map and refs
+    
     Object.keys(dataLayerRefs.current).forEach((id) => {
       if (!activeLayerIds.has(id)) {
         map.removeLayer(dataLayerRefs.current[id]);
@@ -2587,8 +2587,8 @@ out center;`;
     });
 
     const sortedLayers = [...layers].sort((a, b) => a.order - b.order);
-    // Count actual base layers dynamically: basemaps
-    // This prevents silent breakage when basemap layers are added or removed.
+    
+    
     const baseLayersCount = Object.keys(basemapLayersRef.current).length;
 
     sortedLayers.forEach((layer, index) => {
@@ -2615,7 +2615,7 @@ out center;`;
         source.clear();
         source.addFeatures(newFeatures);
       } else {
-        // Create new vector source and layer
+        
         const vectorSource = new VectorSource({
           features: newFeatures
         });
@@ -2639,7 +2639,7 @@ out center;`;
         source.clear();
         source.addFeatures(newFeatures);
       } else {
-        // Create new heatmap layer
+        
         const heatmapSource = new VectorSource({
           features: newFeatures
         });
@@ -2656,7 +2656,7 @@ out center;`;
         heatmapLayerRefs.current[layer.id] = heatmapLayer;
       }
 
-      // Ensure layers are at correct indexes for rendering order
+      
       map.removeLayer(heatmapLayer);
       map.removeLayer(vectorLayer);
       
@@ -2666,7 +2666,7 @@ out center;`;
   }, [layers, showHeatmap]);
 
 
-  // (Removed dead useEffect that found the draw layer but never used it)
+  
 
   useEffect(() => {
     const handleDrawChange = (event) => {
@@ -2773,7 +2773,7 @@ out center;`;
     drawSourceRef.current.clear();
     highlightSourceRef.current.clear();
     lulcSourceRef.current.clear();
-    // Reset all analysis state — prevents stale data from showing for old polygon
+    
     setLiveAmenities(null);
     setLiveAmenitiesError('');
     setLocalNews([]);
@@ -2924,7 +2924,7 @@ out center;`;
       setIntelDraft({ latitude: null, longitude: null, text: '' });
       showStatus(`Logged incident: ${newEntity.extractedData.title}`);
       
-      // Auto-focus the map on the new entity
+      
       if (mapRef.current) {
         const coords = fromLonLat([newEntity.longitude, newEntity.latitude]);
         mapRef.current.getView().animate({ center: coords, zoom: 16, duration: 600 });
@@ -3007,7 +3007,7 @@ out center;`;
   return (
     <>
     <div className="relative w-screen h-screen overflow-hidden bg-[#07111f] text-slate-100 select-none">
-      {/* Fullscreen Map Canvas */}
+      
       <div className="absolute inset-0 w-full h-full z-0 map-shell">
         <div 
           ref={mapElementRef} 
@@ -3027,7 +3027,7 @@ out center;`;
         />
       </div>
 
-      {/* Floating Header */}
+      
       <header className="fixed top-6 left-6 right-6 z-30 flex flex-col md:flex-row md:items-center md:justify-between rounded-[24px] bg-slate-950/70 border border-white/10 shadow-2xl backdrop-blur-xl px-6 py-4 gap-4">
         <div className="flex items-center gap-3">
           <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-400/20 text-cyan-300">
@@ -3042,7 +3042,7 @@ out center;`;
           </div>
         </div>
 
-        {/* Search & Basemap Controls */}
+        
         <div className="flex flex-wrap items-center gap-3">
           <form onSubmit={handleSearch} className="relative flex items-center">
             <input
@@ -3127,17 +3127,17 @@ out center;`;
         </div>
       </header>
 
-      {/* Floating Left Sidebar Panel Wrapper */}
+      
       <aside className="fixed top-28 left-6 bottom-6 w-[380px] z-30 overflow-y-auto pr-2 flex flex-col gap-4 custom-scrollbar select-none">
         
-        {/* Sidebar Tab Switcher */}
+        
         <div className="flex rounded-2xl bg-slate-950/70 p-1 border border-white/10 shadow-2xl backdrop-blur-xl pointer-events-auto flex-shrink-0">
           <button
             type="button"
             onClick={() => {
               setActiveSidebarTab('layers');
               setDrawMode('None');
-              // Clear distance selection when leaving layers tab
+              
               setSelectedMarkersForDistance([]);
             }}
             className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
@@ -3203,7 +3203,7 @@ out center;`;
 
         {activeSidebarTab === 'layers' && (
           <>
-            {/* Layer Explorer Card */}
+            
             <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
@@ -3378,7 +3378,7 @@ out center;`;
               </div>
             </div>
 
-            {/* Marker Distance Card */}
+            
             <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
               <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
                 <Ruler className="h-4 w-4 text-cyan-400" />
@@ -3447,7 +3447,7 @@ out center;`;
           </>
         )}
 
-        {/* Selected Area Card */}
+        
         {activeSidebarTab === 'analysis' && (
           <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
             <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
@@ -3457,7 +3457,7 @@ out center;`;
 
             {selectedAreaAnalysis ? (
               <div className="space-y-3">
-                {/* Visualize Area Knowledge Graph Button */}
+                
                 <button
                   onClick={fetchPolygonKnowledgeContext}
                   disabled={polygonKnowledgeLoading}
@@ -3477,7 +3477,7 @@ out center;`;
                   )}
                 </button>
 
-                {/* Analysis Sub-tab Switcher */}
+                
                 <div className="flex rounded-xl bg-slate-900/80 p-1 border border-white/5 shadow-inner">
                   <button
                     type="button"
@@ -3534,7 +3534,7 @@ out center;`;
                       </div>
                     </div>
 
-                    {/* AI Intel Entities inside polygon */}
+                    
                     {(() => {
                       if (!intelEntities || intelEntities.length === 0 || !selectedAreaPolygon) return null;
                       const polyGeom = selectedAreaPolygon.getGeometry();
@@ -3581,7 +3581,7 @@ out center;`;
                     })()}
 
                     <div className="border-t border-white/10 pt-3 mt-3">
-                      {/* Header + Layer Controls */}
+                      
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                           <Globe className="h-3.5 w-3.5 text-emerald-400" />
@@ -3589,7 +3589,7 @@ out center;`;
                         </h3>
                         {lulcData && Object.keys(lulcClassColorMap).length > 0 && (
                           <div className="flex items-center gap-1.5">
-                            {/* Show/Hide toggle */}
+                            
                             <button
                               type="button"
                               onClick={() => {
@@ -3602,7 +3602,7 @@ out center;`;
                             >
                               {lulcLayerVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                             </button>
-                            {/* Zoom to extent */}
+                            
                             <button
                               type="button"
                               onClick={() => {
@@ -3620,7 +3620,7 @@ out center;`;
                         )}
                       </div>
 
-                      {/* Opacity slider */}
+                      
                       {lulcData && Object.keys(lulcClassColorMap).length > 0 && (
                         <div className="flex items-center gap-2 mb-3">
                           <span className="text-[9px] uppercase tracking-[0.1em] text-slate-500 whitespace-nowrap">Opacity</span>
@@ -3638,7 +3638,7 @@ out center;`;
                         </div>
                       )}
 
-                      {/* Hover tooltip indicator */}
+                      
                       {lulcHoveredClass && (
                         <div
                           className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-all"
@@ -3656,7 +3656,7 @@ out center;`;
                         </div>
                       )}
 
-                      {/* Click highlight indicator */}
+                      
                       {lulcHighlightedFeature && (
                         <div
                           className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold transition-all"
@@ -3696,13 +3696,13 @@ out center;`;
                         <div className="space-y-2">
                            {lulcData.classes && lulcData.classes.length > 0 ? (
                             lulcData.classes.map((cls) => {
-                              // === Fully dynamic — no hardcoded class names ===
+                              
                               const hexColor = lulcClassColorMap[cls.className] || '#94a3b8';
                               return (
                                 <div key={cls.className} className="space-y-1">
                                   <div className="flex items-center justify-between text-[10px]">
                                     <div className="flex items-center gap-1.5">
-                                      {/* Colored swatch — dynamically colored */}
+                                      
                                       <span
                                         className="h-2.5 w-2.5 rounded-sm flex-shrink-0"
                                         style={{ backgroundColor: hexColor }}
@@ -3714,7 +3714,7 @@ out center;`;
                                       <span>({Math.round(cls.area).toLocaleString()} m²)</span>
                                     </div>
                                   </div>
-                                  {/* Progress bar — inline style for dynamic color */}
+                                  
                                   <div className="h-1.5 w-full bg-slate-900/60 rounded-full overflow-hidden border border-white/5">
                                     <div
                                       className="h-full transition-all duration-500 rounded-full"
@@ -3728,7 +3728,7 @@ out center;`;
                             <p className="text-[11px] text-slate-400 italic text-center py-1">Land type details not available</p>
                           )}
 
-                          {/* Auto-generated Legend */}
+                          
                           {Object.keys(lulcClassColorMap).length > 0 && (
                             <div className="mt-3 pt-3 border-t border-white/5">
                               <p className="text-[9px] uppercase tracking-[0.15em] text-slate-500 mb-2">Legend</p>
@@ -3753,7 +3753,7 @@ out center;`;
                   </>
                 ) : (
                   <>
-                    {/* Live Amenities Discovery */}
+                    
                     <div className="border-t border-white/10 pt-3">
                       <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
                         <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
@@ -3806,7 +3806,7 @@ out center;`;
                       )}
                     </div>
 
-                    {/* Local News Feed */}
+                    
                     <div className="border-t border-white/10 pt-3 mt-3">
                       <h3 className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
                         <Newspaper className="h-3.5 w-3.5 text-purple-400" />
@@ -3897,7 +3897,7 @@ out center;`;
               </div>
             ) : (
               <div className="space-y-4 max-h-[62vh] overflow-y-auto pr-1 custom-scrollbar">
-                {/* 1. Search Radius Settings */}
+                
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[9px] uppercase tracking-wider text-slate-500 font-bold block">SEARCH RANGE</span>
@@ -3941,7 +3941,7 @@ out center;`;
                   </div>
                 </div>
 
-                {/* 2. Collapsible Human Friendly Cards */}
+                
                 <div className="space-y-2">
                   {(() => {
                     const humanFriendlyCards = [
@@ -4065,7 +4065,7 @@ out center;`;
                       }
                     ];
 
-                    // Check for LULC percentages and add them dynamically to the land card
+                    
                     if (spatialFeatures?.featureVector?.land_use) {
                       const landCard = humanFriendlyCards.find(c => c.id === 'land');
                       if (landCard) {
@@ -4163,14 +4163,14 @@ if (typeof raw === 'string') {
                         return { ...f, ...info };
                       });
 
-                      // Filter features based on mode (point vs polygon) to hide irrelevant "Not detected" stats
+                      
                       const cardFeaturesWithData = rawFeatures.filter(f => {
                         const isPolygonMode = !!selectedAreaCoords;
                         if (isPolygonMode) {
-                          // Hide point-only NDVI lookup
+                          
                           return f.key !== 'ndvi_value';
                         } else {
-                          // Hide polygon-only NDVI aggregate statistics
+                          
                           return !['ndvi_mean', 'ndvi_min', 'ndvi_max', 'ndvi_stddev'].includes(f.key);
                         }
                       });
@@ -4234,19 +4234,19 @@ if (typeof raw === 'string') {
                                         <p className="text-slate-400 font-sans">
                                           {(() => {
                                             const INSIGHTS = {
-                                              // Transport
+                                              
                                               nearest_highway_distance: 'We detected the nearest main highway or primary arterial link at this point. Pinned on the map with a warm-orange dashed line showing the shortest connection route.',
                                               nearest_highway_class: 'The road category or level of the closest transport route. It shows whether the nearest connection is a highway, primary road, secondary road, or local street.',
                                               nearest_rail_station_distance: 'The closest railway junction connecting this location to local and national train networks. Drawn on the map to display proximity.',
                                               nearest_fuel_station_distance: 'The nearest fuel/petrol station detected. Essential for mapping energy access, fuel logistics, and transportation routing.',
                                               road_density_count_2km: 'The density of road connections in a 2km radius. A higher count indicates excellent connectivity, while a low count shows isolated areas.',
-                                              // Population
+                                              
                                               population_density_per_sqkm: 'The average number of people living in each square kilometer. Helps estimate local urban congestion, commercial reach, and crowd size.',
                                               density_classification: 'The settlement type category (e.g. urban, semi-urban, rural). Calculated based on regional population density benchmarks.',
                                               population_within_1km: 'Total estimated count of residents living within a 1km walking distance. Key metric for local demand and public service planning.',
                                               population_within_2km: 'Estimated residential population within a 2km radius. Represents the immediate local community scope.',
                                               population_within_5km: 'Estimated residential population within a 5km radius. Represents the regional catchment area for hospitals, markets, and colleges.',
-                                              // Land
+                                              
                                               elevation_meters: 'The land height above sea level in meters. Crucial for understanding drainage, flood risks, and general terrain characteristics.',
                                               slope_degrees: 'The steepness of the terrain in degrees. Flat land (0-2°) is ideal for construction, while steep slopes are subject to high erosion and runoff.',
                                               lulc_class: 'The dominant land cover type at the center coordinate (e.g., buildings, crops, trees). Sourced from satellite spectral classification.',
@@ -4255,25 +4255,25 @@ if (typeof raw === 'string') {
                                               ndvi_min: 'The minimum vegetation index recorded inside the selected boundary. Typically indicates fully paved roads or concrete structures.',
                                               ndvi_max: 'The maximum vegetation index recorded inside the selected boundary. Pinpoints the densest patch of forest or park canopy.',
                                               ndvi_stddev: 'The standard deviation of greenery index. Shows how diverse the vegetation is across the selected zone (e.g., mix of grass, trees, and buildings).',
-                                              // Infrastructure
+                                              
                                               nearest_substation_distance: 'The closest electrical grid power substation. Indicates electricity distribution density and grid infrastructure stability.',
                                               power_lines_within_2km: 'Total length/count of high-voltage transmission lines in the vicinity. Crucial for industrial grid connection feasibility.',
                                               nearest_telecom_tower_distance: 'The closest mobile transmission tower. Highlights coverage reliability, network density, and digital communication access.',
                                               telecom_towers_within_2km: 'Total mobile transmission towers within a 2km radius. Higher counts mean better signal coverage and mobile bandwidth.',
                                               nearest_post_office_distance: 'The nearest public postal services building. Shows general utility and public infrastructure convenience.',
-                                              // Water
+                                              
                                               nearest_water_infrastructure_distance: 'The closest public water supply source, reservoir, or distribution pipe. Crucial for utility mapping.',
-                                              // Nearby Facilities
+                                              
                                               schoolsCount: 'Total number of primary, secondary, and higher education schools detected in the area. Key indicator of family friendliness and social infrastructure.',
                                               hospitalsCount: 'Total hospitals, medical clinics, and healthcare centers detected in the area. Vital for assessing local health safety and emergency readiness.',
                                               gymsCount: 'Number of physical fitness centers, gymnasiums, and public parks in the area. Shows recreational and lifestyle accessibility.',
                                               waterBodiesCount: 'Number of lakes, ponds, water channels, or riverbanks detected within the area. Important for local environmental health.',
-                                              // Environment
+                                              
                                               pm2_5_concentration: 'The level of fine dust particles (PM2.5) in the atmosphere. Values above 50 µg/m³ can impact sensitive groups, while values over 150 require safety precautions.',
                                               nearest_cpcb_station_name: 'The name of the official government Central Pollution Control Board monitoring station. Sourced from ground-truth sensors.',
                                               nearest_cpcb_station_distance: 'The shortest path to the closest official government air quality monitoring station. Visualized on the map with a connection line.',
                                               forestAreaSqKm: 'The total estimated area covered by dense forest canopy inside the selected zone. Sourced from regional land-use vector maps.',
-                                              // Weather
+                                              
                                               current_temperature: 'The active real-time air temperature at this coordinate. Fetched dynamically from Open-Meteo local stations.',
                                               current_humidity: 'The percentage of water vapor in the air. High humidity increases heat index, while low humidity indicates dry conditions.',
                                               current_wind_speed: 'Current speed of the wind at this location. Crucial for agricultural planning, wind energy assessment, and weather tracking.',
@@ -4281,12 +4281,12 @@ if (typeof raw === 'string') {
                                               annual_average_relative_humidity: 'The historical average relative humidity percentage recorded annually in this region.',
                                               average_solar_radiation: 'The average solar sunlight energy received daily. Critical metric for solar panels and crop growth planning.',
                                               annual_average_temperature: 'The historical mean annual temperature of this region, reflecting long-term climate trends.',
-                                              // Disaster
+                                              
                                               flood_risk_classification: 'Calculated flood vulnerability rating (e.g., Low, Medium, High). Based on historical runoff patterns, elevation, and river proximity.',
                                               seismic_hazard_zone: 'Official earthquake risk classification. Varanasi lies in Zone III (Moderate Damage Risk Zone) according to BIS seismic zoning maps.',
                                               recent_seismic_activity_count_200km: 'Number of earthquake occurrences recorded within a 200km radius over recent historical catalogues.',
                                               maximum_recent_magnitude: 'The highest magnitude earthquake recorded nearby. Helps understand regional tectonic stability.',
-                                              // Economy
+                                              
                                               retail_density_per_sqkm: 'The density of retail shops operating per square kilometer. High density indicates a bustling commercial district.',
                                               supermarkets_count: 'The count of large grocery stores or shopping marts nearby. Indicates urban retail maturity and consumer convenience.',
                                               convenience_stores_count: 'Number of local corner shops and small convenience stores. Crucial for daily neighborhood shopping needs.',
@@ -4309,7 +4309,7 @@ if (typeof raw === 'string') {
                   })()}
                 </div>
 
-                {/* 3. H3 Spatial Grid Intelligence POC Section */}
+                
                 <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
                   <div className="flex items-center justify-between border-b border-white/5 pb-2">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5 font-sans">
@@ -4452,7 +4452,7 @@ if (typeof raw === 'string') {
         )}
       </aside>
 
-      {/* Floating vertical toolbar on the right, below the zoom controls */}
+      
       <div className="fixed top-[210px] right-6 z-30 flex flex-col gap-2 p-1.5 rounded-[20px] bg-slate-950/75 border border-white/10 shadow-2xl backdrop-blur-xl pointer-events-auto">
         <button
           type="button"
@@ -4582,14 +4582,14 @@ if (typeof raw === 'string') {
         )}
       </div>
 
-      {/* Floating coordinates and status indicators at bottom right */}
+      
       <div className="fixed bottom-6 right-6 z-30 flex flex-col items-end gap-2 pointer-events-none select-none">
-        {/* Live coordinates */}
+        
         <div className="pointer-events-auto rounded-2xl border border-white/10 bg-slate-950/75 px-4 py-2 text-[11px] text-slate-200 shadow-2xl shadow-black/30 backdrop-blur-xl flex items-center gap-2 font-mono">
           <Activity className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
           <span>Live: {formatCoordinates(hoverCoordinates)}</span>
         </div>
-        {/* Selected Coordinates info */}
+        
         {selectedCoordinates && (
           <div className="pointer-events-auto rounded-2xl border border-white/10 bg-slate-950/85 px-4 py-2 text-[11px] text-slate-200 shadow-2xl shadow-black/30 backdrop-blur-xl flex items-center gap-2 font-mono">
             <CircleDot className="h-3.5 w-3.5 text-emerald-400" />
@@ -4598,7 +4598,7 @@ if (typeof raw === 'string') {
         )}
       </div>
 
-      {/* Floating Elevation Query Details Panel — positioned responsively */}
+      
       {elevationQueryResult && (
         <div className="fixed bottom-6 left-6 md:left-[410px] z-30 w-[300px] pointer-events-auto rounded-[24px] border border-cyan-500/30 bg-slate-950/90 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
           <div className="flex items-start justify-between">
@@ -4621,13 +4621,13 @@ if (typeof raw === 'string') {
 
           {elevationQueryResult.elevation !== null ? (
             <div className="space-y-3">
-              {/* Elevation */}
+              
               <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
                 <div className="flex justify-between items-baseline">
                   <span className="text-[10px] uppercase tracking-[0.1em] text-slate-400">Elevation</span>
                   <span className="text-lg font-bold text-white">{elevationQueryResult.elevation.toFixed(1)} m</span>
                 </div>
-                {/* Elevation visual indicator relative to Varanasi bounds (~50m to ~223m) */}
+                
                 <div className="h-1.5 w-full bg-slate-950/60 rounded-full overflow-hidden mt-2 border border-white/5">
                   <div
                     className="h-full bg-gradient-to-r from-emerald-400 to-cyan-400 rounded-full transition-all duration-300"
@@ -4642,7 +4642,7 @@ if (typeof raw === 'string') {
                 </div>
               </div>
 
-              {/* Slope */}
+              
               <div className="rounded-xl border border-white/5 bg-slate-900/40 p-3">
                 <div className="flex justify-between items-baseline">
                   <span className="text-[10px] uppercase tracking-[0.1em] text-slate-400">Slope</span>
@@ -4676,7 +4676,7 @@ if (typeof raw === 'string') {
         </div>
       )}
 
-      {/* Floating Intel Entity Details Panel */}
+      
       {selectedIntelEntity && (
         <div className="fixed bottom-6 left-6 md:left-[410px] z-30 w-[340px] pointer-events-auto rounded-[24px] border border-cyan-500/30 bg-slate-950/90 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-3">
           <div className="flex items-start justify-between">
@@ -4740,7 +4740,7 @@ if (typeof raw === 'string') {
         </div>
       )}
 
-      {/* Programmatic Tooltip Overlays (OpenLayers) */}
+      
       <div className="hidden">
         <div
           ref={tooltipRef}
@@ -4762,10 +4762,10 @@ if (typeof raw === 'string') {
         </div>
       </div>
 
-      {/* Right sliding explorer panel */}
+      
       {selectedAmenityCategory && (
         <div className="fixed top-28 right-6 bottom-6 w-[360px] z-30 flex flex-col rounded-[24px] border border-white/10 bg-slate-950/80 shadow-2xl backdrop-blur-xl pointer-events-auto transition-all duration-300">
-          {/* Panel Header */}
+          
           <div className="flex items-center justify-between p-5 border-b border-white/15">
             <div className="flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400">
@@ -4793,7 +4793,7 @@ if (typeof raw === 'string') {
             </button>
           </div>
 
-          {/* Search bar inside panel */}
+          
           <div className="p-4 border-b border-white/10">
             <div className="relative">
               <Search className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -4815,7 +4815,7 @@ if (typeof raw === 'string') {
             </div>
           </div>
 
-          {/* List of facilities */}
+          
           <div className="flex-1 overflow-y-auto p-4 space-y-2.5 custom-scrollbar select-none">
             {filteredAmenities.length === 0 ? (
               <div className="text-center py-8 text-xs text-slate-400 italic leading-relaxed">
@@ -4880,7 +4880,7 @@ if (typeof raw === 'string') {
         </div>
       )}
 
-      {/* Floating Detailed Amenity Card */}
+      
       {highlightedLiveAmenity && (
         <div className="fixed bottom-24 right-6 z-30 w-[360px] rounded-[24px] border border-cyan-500/30 bg-slate-950/90 p-5 shadow-2xl backdrop-blur-xl pointer-events-auto flex flex-col gap-3">
           <div className="flex items-start justify-between gap-2">
@@ -4935,7 +4935,7 @@ if (typeof raw === 'string') {
         </div>
       )}
 
-      {/* Floating Bhuvan WMS Legend Card */}
+      
       {(() => {
         const hasActiveBhuvanLayer = bhuvanLulcActive || bhuvanGeomorphActive || bhuvanWastelandActive;
         if (!hasActiveBhuvanLayer) return null;
@@ -4992,7 +4992,7 @@ if (typeof raw === 'string') {
         );
       })()}
 
-      {/* Floating Status Message Toast/Notification */}
+      
       {statusMessage && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-md pointer-events-auto rounded-full border border-cyan-500/30 bg-slate-950/90 px-5 py-2.5 text-xs font-semibold text-cyan-200 shadow-2xl shadow-cyan-500/5 backdrop-blur-xl flex items-center gap-2.5 status-pulse select-none">
           <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-ping" />
