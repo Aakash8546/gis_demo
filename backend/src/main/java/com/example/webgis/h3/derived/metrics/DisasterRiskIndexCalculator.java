@@ -12,6 +12,8 @@ import java.util.Map;
 @Component
 public class DisasterRiskIndexCalculator implements DerivedMetricCalculator {
 
+
+
     @Override
     public String getMetricName() {
         return "disaster_risk_index";
