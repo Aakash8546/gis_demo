@@ -20,6 +20,8 @@ import java.util.*;
 @Slf4j
 public class SpatialDataCollector {
 
+
+
     private final DatasetRegistry datasetRegistry;
     
     @Autowired
