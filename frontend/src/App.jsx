@@ -14,6 +14,7 @@ import Feature from 'ol/Feature';
 import Point from 'ol/geom/Point';
 import LineString from 'ol/geom/LineString';
 import Circle from 'ol/geom/Circle';
+import Polygon from 'ol/geom/Polygon';
 import VectorTileLayer from 'ol/layer/VectorTile';
 import VectorTileSource from 'ol/source/VectorTile';
 import MVT from 'ol/format/MVT';
@@ -761,6 +762,14 @@ function App() {
   const [spatialFeatures, setSpatialFeatures] = useState(null);
   const [spatialFeaturesLoading, setSpatialFeaturesLoading] = useState(false);
   const [spatialFeaturesError, setSpatialFeaturesError] = useState(null);
+  const [h3GridData, setH3GridData] = useState(null);
+  const [h3GridLoading, setH3GridLoading] = useState(false);
+  const [h3GridError, setH3GridError] = useState(null);
+  const [h3LayerVisible, setH3LayerVisible] = useState(false);
+  const [h3LabelsVisible, setH3LabelsVisible] = useState(false);
+  const [h3ColorMetric, setH3ColorMetric] = useState('composite_score');
+  const h3LayerRef = useRef(null);
+  const fetchH3GridRef = useRef(null);
   const [decisionSubTab, setDecisionSubTab] = useState('general');
   const [knowledgeRadius, setKnowledgeRadius] = useState(2000); // default 2km (in meters)
   const [showBuffer, setShowBuffer] = useState(true);
@@ -1402,6 +1411,79 @@ out center;`;
     }
   }, [showStatus]);
 
+  const fetchH3Grid = useCallback(async (lat, lon, polygonCoords = null) => {
+    console.log("fetchH3Grid triggered:", lat, lon, polygonCoords);
+    setH3GridLoading(true);
+    setH3GridError(null);
+    try {
+      const body = polygonCoords 
+        ? { polygon: polygonCoords, resolution: 9 }
+        : { latitude: lat, longitude: lon, resolution: 9, kRing: 1 };
+
+      const res = await fetch('/api/h3/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to load H3 Grid: ${res.status}`);
+      }
+
+      const data = await res.json();
+      console.log("H3 data cells received:", data.cells?.length, data.cells);
+      setH3GridData(data);
+      
+      // Render Hexagons on map layer
+      if (h3LayerRef.current) {
+        console.log("h3LayerRef.current exists, visibility:", h3LayerRef.current.getVisible());
+        const source = h3LayerRef.current.getSource();
+        source.clear();
+
+        const features = data.cells.map(cell => {
+          const coordinates = cell.boundary.map(pt => fromLonLat([pt[1], pt[0]]));
+          if (coordinates.length > 0) {
+            coordinates.push(coordinates[0]); // Close polygon loop
+          }
+          const feature = new Feature({
+            geometry: new Polygon([coordinates])
+          });
+          feature.set('h3Index', cell.h3Index);
+          feature.set('derivedMetrics', cell.derivedMetrics);
+          feature.set('aggregatedData', cell.aggregatedData);
+          
+          // Apply clean sky-blue outline style, optionally with cell ID labels
+          const textStyle = h3LabelsVisible ? new Text({
+            text: cell.h3Index,
+            font: 'bold 9px monospace',
+            fill: new Fill({ color: '#38bdf8' }),
+            stroke: new Stroke({ color: '#0f172a', width: 2 }),
+            overflow: true
+          }) : null;
+
+          feature.setStyle(new Style({
+            fill: new Fill({ color: 'rgba(0, 0, 0, 0)' }),
+            stroke: new Stroke({ color: 'rgba(56, 189, 248, 0.75)', width: 1.5 }),
+            text: textStyle
+          }));
+
+          return feature;
+        });
+
+        console.log("Adding features to H3 source. Count:", features.length);
+        source.addFeatures(features);
+        console.log("H3 source features count now:", source.getFeatures().length);
+      } else {
+        console.warn("h3LayerRef.current is null!");
+      }
+    } catch (err) {
+      console.error('H3 grid query failed:', err);
+      setH3GridError(err.message || 'Failed to query H3 grid cells.');
+    } finally {
+      setH3GridLoading(false);
+    }
+  }, [h3ColorMetric, h3LabelsVisible]);
+
   const fetchKnowledgeContext = useCallback(async (lonLatOrPolygon, isPolygon = false, customRadius) => {
     setActiveSidebarTab('decision');
     setActiveRelationshipTarget(null);
@@ -1457,6 +1539,14 @@ out center;`;
 
       setKnowledgeContext(knowledgeData);
       setSpatialFeatures(featuresData);
+      
+      // Auto-trigger H3 grid overlay query on every point click or polygon selection
+      if (isPolygon) {
+        fetchH3Grid(null, null, lonLatOrPolygon);
+      } else {
+        const [lon, lat] = lonLatOrPolygon;
+        fetchH3Grid(lat, lon);
+      }
     } catch (err) {
       console.error('Error loading context:', err);
       setKnowledgeError(err.message || 'Failed to connect to GIS Knowledge service.');
@@ -1465,7 +1555,7 @@ out center;`;
       setKnowledgeLoading(false);
       setSpatialFeaturesLoading(false);
     }
-  }, [knowledgeRadius]);
+  }, [knowledgeRadius, fetchH3Grid]);
 
   const fetchPolygonKnowledgeContext = useCallback(async () => {
     if (!selectedAreaCoords) {
@@ -1484,9 +1574,9 @@ out center;`;
       if (!response.ok) {
         throw new Error(`Failed to build polygon context: ${response.status}`);
       }
-      const data = await response.json();
       setPolygonKnowledgeContext(data);
       setShowKgVisualizer(true);
+      fetchH3Grid(null, null, selectedAreaCoords);
     } catch (err) {
       console.error('Error loading polygon knowledge context:', err);
       setPolygonKnowledgeError(err.message || 'Failed to connect to GIS Knowledge service.');
@@ -1494,7 +1584,7 @@ out center;`;
     } finally {
       setPolygonKnowledgeLoading(false);
     }
-  }, [selectedAreaCoords, showStatus]);
+  }, [selectedAreaCoords, showStatus, fetchH3Grid]);
 
   const handleFocusHeritage = useCallback((site) => {
     if (!site.lat || !site.lon || !mapRef.current) return;
@@ -1899,9 +1989,10 @@ out center;`;
 
   useEffect(() => {
     fetchKnowledgeContextRef.current = fetchKnowledgeContext;
+    fetchH3GridRef.current = fetchH3Grid;
     queryPointElevationRef.current = queryPointElevation;
     openFeatureDialogRef.current = openFeatureDialog;
-  }, [fetchKnowledgeContext, queryPointElevation, openFeatureDialog]);
+  }, [fetchKnowledgeContext, fetchH3Grid, queryPointElevation, openFeatureDialog]);
 
   // The map is only created ONCE (no deps on mapCenter or layers to prevent re-init).
   // Layer management is handled by a separate useEffect.
@@ -2151,6 +2242,14 @@ out center;`;
     intelLayer.set('kind', 'overlay');
     intelLayerRef.current = intelLayer;
 
+    const h3Layer = new VectorLayer({
+      source: new VectorSource(),
+      style: null,
+      visible: h3LayerVisible,
+      zIndex: 5
+    });
+    h3LayerRef.current = h3Layer;
+
     const map = new Map({
         target: mapElementRef.current,
         layers: [
@@ -2160,6 +2259,7 @@ out center;`;
           basemapLayersRef.current.satelliteLabels,
           basemapLayersRef.current.varanasi_mbtiles,
           lulcLayerRef.current, // Render LULC below interactive overlays so vector highlights are visible!
+          h3Layer,
           highlightLayer, selectedPointLayer, detailHighlightLayer, distanceMeasureLayer,
           drawLayer,
           decisionSupportPinsLayer,
@@ -2288,6 +2388,9 @@ out center;`;
       // Fetch dynamic Knowledge Context
       if (decisionSupportModeRef.current && fetchKnowledgeContextRef.current) {
         fetchKnowledgeContextRef.current(coordinates);
+      } else if (fetchH3GridRef.current) {
+        const [lon, lat] = coordinates;
+        fetchH3GridRef.current(lat, lon);
       }
 
       // Check for LULC feature click — highlight it
@@ -2399,6 +2502,34 @@ out center;`;
     });
     baseSelection.current = basemap;
   }, [basemap]);
+
+  useEffect(() => {
+    if (h3LayerRef.current) {
+      h3LayerRef.current.setVisible(h3LayerVisible);
+    }
+  }, [h3LayerVisible]);
+
+  useEffect(() => {
+    if (h3LayerRef.current) {
+      const source = h3LayerRef.current.getSource();
+      source.getFeatures().forEach(feature => {
+        const cellId = feature.get('h3Index');
+        const textStyle = h3LabelsVisible ? new Text({
+          text: cellId,
+          font: 'bold 9px monospace',
+          fill: new Fill({ color: '#38bdf8' }),
+          stroke: new Stroke({ color: '#0f172a', width: 2 }),
+          overflow: true
+        }) : null;
+
+        feature.setStyle(new Style({
+          fill: new Fill({ color: 'rgba(0, 0, 0, 0)' }),
+          stroke: new Stroke({ color: 'rgba(56, 189, 248, 0.75)', width: 1.5 }),
+          text: textStyle
+        }));
+      });
+    }
+  }, [h3LayerVisible, h3LabelsVisible]);
 
   useEffect(() => {
     if (!mapRef.current) {
@@ -2966,6 +3097,24 @@ out center;`;
           >
             {showHeatmap ? 'Show Markers' : 'Show Heatmap'}
           </button>
+
+          <button
+            onClick={() => setH3LayerVisible(prev => !prev)}
+            type="button"
+            className={`rounded-2xl px-3.5 py-2 text-[11px] font-semibold border transition-all ${h3LayerVisible ? 'bg-cyan-500 border-cyan-500 text-white shadow-lg shadow-cyan-500/20' : 'bg-slate-950/50 text-slate-300 border-white/10 hover:bg-slate-950/80'}`}
+          >
+            {h3LayerVisible ? 'Hide H3 Grid' : 'Show H3 Grid'}
+          </button>
+
+          {h3LayerVisible && (
+            <button
+              onClick={() => setH3LabelsVisible(prev => !prev)}
+              type="button"
+              className={`rounded-2xl px-3.5 py-2 text-[11px] font-semibold border transition-all ${h3LabelsVisible ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'bg-slate-950/50 text-slate-300 border-white/10 hover:bg-slate-950/80'}`}
+            >
+              {h3LabelsVisible ? 'Hide Cell Numbers' : 'Show Cell Numbers'}
+            </button>
+          )}
 
           <button
             onClick={toggleFullscreen}
@@ -4160,7 +4309,69 @@ if (typeof raw === 'string') {
                   })()}
                 </div>
 
+                {/* 3. H3 Spatial Grid Intelligence POC Section */}
+                <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5 font-sans">
+                      <span>🔷</span> H3 Spatial Grid (POC)
+                    </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold text-slate-300 select-none">
+                      <input
+                        type="checkbox"
+                        checked={h3LayerVisible}
+                        onChange={(e) => setH3LayerVisible(e.target.checked)}
+                        className="rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500 h-3 w-3 accent-cyan-400 cursor-pointer pointer-events-auto"
+                      />
+                      <span>Show Grid</span>
+                    </label>
+                  </div>
 
+                  <div className="space-y-2 text-xs">
+                    {h3GridLoading ? (
+                      <div className="flex items-center justify-center py-4 text-[10px] text-slate-400 gap-2">
+                        <Loader2 className="h-4.5 w-4.5 animate-spin text-cyan-400" />
+                        <span>Generating spatial grids...</span>
+                      </div>
+                    ) : h3GridError ? (
+                      <p className="text-[10px] text-rose-400 bg-rose-950/20 px-2.5 py-1.5 rounded-lg border border-rose-900/35 text-center font-medium">
+                        {h3GridError}
+                      </p>
+                    ) : h3GridData?.cells?.length > 0 ? (
+                      <div className="space-y-2 pt-1">
+                        <span className="text-[8px] uppercase tracking-wider text-slate-500 font-bold block">
+                          GRID CELLS ({h3GridData.cells.length} cells at Resolution {h3GridData.resolution})
+                        </span>
+                        
+                        <div className="space-y-1.5 max-h-[22vh] overflow-y-auto pr-0.5 custom-scrollbar pointer-events-auto">
+                          {h3GridData.cells.map(cell => {
+                            return (
+                              <div
+                                key={cell.h3Index}
+                                onClick={() => {
+                                  if (mapRef.current) {
+                                    const centerCoord = fromLonLat([cell.centerLon, cell.centerLat]);
+                                    mapRef.current.getView().animate({ center: centerCoord, zoom: 15, duration: 500 });
+                                  }
+                                }}
+                                className="p-2.5 rounded-xl border border-white/5 bg-slate-950/40 hover:bg-slate-900/40 hover:border-white/10 transition-all text-left cursor-pointer flex items-center justify-between"
+                              >
+                                <div className="space-y-0.5">
+                                  <span className="font-mono font-bold text-cyan-300 text-[10px] block">{cell.h3Index}</span>
+                                  <span className="text-slate-500 text-[8.5px]">Center: {cell.centerLat.toFixed(4)}, {cell.centerLon.toFixed(4)}</span>
+                                </div>
+                                <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-wide">Grid Cell</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-slate-500 italic text-center py-1 font-sans">
+                        Select a point to load neighborhood grid overlays.
+                      </p>
+                    )}
+                  </div>
+                </div>
 
               </div>
             )}
