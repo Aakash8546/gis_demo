@@ -12,6 +12,8 @@ import java.util.Map;
 @Component
 public class AccessibilityIndexCalculator implements DerivedMetricCalculator {
 
+
+
     @Override
     public String getMetricName() {
         return "accessibility_index";
