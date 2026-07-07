@@ -14,6 +14,8 @@ import java.util.Map;
 @Component("DOMINANT_CLASS")
 public class DominantClassAggregationStrategy implements AggregationStrategy {
 
+
+
     @Override
     public Object aggregate(List<GISFeature> features) {
         if (features == null || features.isEmpty()) {
