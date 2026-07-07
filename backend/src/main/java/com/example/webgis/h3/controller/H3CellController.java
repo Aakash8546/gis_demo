@@ -21,6 +21,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class H3CellController {
 
+
+
     private final H3GridService h3GridService;
     private final H3Service h3Service;
     private final H3CellProfileRepository profileRepository;
