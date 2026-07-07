@@ -12,6 +12,8 @@ import java.util.List;
 @Component("COUNT")
 public class CountAggregationStrategy implements AggregationStrategy {
 
+
+
     @Override
     public Object aggregate(List<GISFeature> features) {
         if (features == null || features.isEmpty()) {
