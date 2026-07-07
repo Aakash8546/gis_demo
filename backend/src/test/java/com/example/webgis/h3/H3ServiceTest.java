@@ -11,6 +11,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class H3ServiceTest {
 
+
+
     private H3Service h3Service;
 
     @BeforeEach
