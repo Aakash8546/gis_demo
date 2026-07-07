@@ -25,6 +25,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class H3GridService {
 
+
+
     private final H3Service h3Service;
     private final SpatialDataCollector collector;
     private final AggregationEngine aggregationEngine;
