@@ -10,3 +10,4 @@
 - ci: update GitHub Actions workflow for Java 17
 - chore(frontend): remove unused CSS variables in index.css
 - docs(api): clarify GeoJSON export endpoint parameters
+- perf(frontend): debounce viewport change events to reduce re-renders
