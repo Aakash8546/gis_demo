@@ -11,3 +11,4 @@
 - chore(frontend): remove unused CSS variables in index.css
 - docs(api): clarify GeoJSON export endpoint parameters
 - perf(frontend): debounce viewport change events to reduce re-renders
+- fix(gis): correct coordinate projection mismatch in KML parser
