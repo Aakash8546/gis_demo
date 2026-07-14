@@ -14,3 +14,4 @@
 - fix(gis): correct coordinate projection mismatch in KML parser
 - style(backend): apply standard formatting to DatasetRegistryService
 - refactor(backend): streamline geometry validation logic
+- test(frontend): add snapshot test for choropleth rendering
