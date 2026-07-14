@@ -2,3 +2,4 @@
 - refactor(backend): optimize H3 index generation for larger datasets
 - fix(frontend): resolve tooltip flickering on polygon borders
 - chore(deps): bump jackson-databind from 2.15.2 to 2.15.3
+- style(frontend): adjust hover overlay opacity for better contrast
