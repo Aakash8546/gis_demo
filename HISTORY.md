@@ -5,3 +5,4 @@
 - style(frontend): adjust hover overlay opacity for better contrast
 - perf(gis): cache spatial bounding box calculations
 - test(backend): add unit tests for SavingsCalculator
+- refactor(frontend): extract LayerLegend into a separate reusable component
