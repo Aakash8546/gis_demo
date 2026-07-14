@@ -6,3 +6,4 @@
 - perf(gis): cache spatial bounding box calculations
 - test(backend): add unit tests for SavingsCalculator
 - refactor(frontend): extract LayerLegend into a separate reusable component
+- fix(backend): handle null values gracefully during quantile classification
