@@ -16,3 +16,4 @@
 - refactor(backend): streamline geometry validation logic
 - test(frontend): add snapshot test for choropleth rendering
 - chore(deps-dev): bump vite from 5.4.1 to 5.4.2
+- docs: add contributing guidelines
