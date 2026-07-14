@@ -13,3 +13,4 @@
 - perf(frontend): debounce viewport change events to reduce re-renders
 - fix(gis): correct coordinate projection mismatch in KML parser
 - style(backend): apply standard formatting to DatasetRegistryService
+- refactor(backend): streamline geometry validation logic
