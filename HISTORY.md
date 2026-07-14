@@ -9,3 +9,4 @@
 - fix(backend): handle null values gracefully during quantile classification
 - ci: update GitHub Actions workflow for Java 17
 - chore(frontend): remove unused CSS variables in index.css
+- docs(api): clarify GeoJSON export endpoint parameters
