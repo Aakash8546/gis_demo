@@ -44,6 +44,7 @@ import {
   Search,
   Sun,
   Moon,
+  LayoutGrid,
   Map as MapIcon,
   Ruler,
   Maximize2,
@@ -521,6 +522,76 @@ function layerStyleFactory(layer) {
   };
 }
 
+function getClassIndex(value, breaks) {
+  for (let i = 1; i < breaks.length; i++) {
+    if (value <= breaks[i]) return i - 1;
+  }
+  return breaks.length - 2;
+}
+
+function formatVizValue(value, format) {
+  if (value == null || isNaN(value)) return 'No Data';
+  const num = Number(value);
+  if (format === 'currency') return '₹' + num.toLocaleString('en-IN');
+  if (format === 'percent') return num.toFixed(1) + '%';
+  return num.toLocaleString('en-IN');
+}
+
+
+function darkenHex(hex, factor) {
+  const cleanHex = hex.replace('#', '');
+  let r = parseInt(cleanHex.substring(0, 2), 16);
+  let g = parseInt(cleanHex.substring(2, 4), 16);
+  let b = parseInt(cleanHex.substring(4, 6), 16);
+  r = Math.floor(r * (1 - factor));
+  g = Math.floor(g * (1 - factor));
+  b = Math.floor(b * (1 - factor));
+  return `#${(1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1)}`;
+}
+
+function datasetStyleFactory(layer) {
+  const vs = layer.metadata?.vizSchema;
+  if (!vs) return layerStyleFactory(layer);
+
+  const cachedFills = vs.classColors.map(hex => new Style({
+    stroke: new Stroke({ color: darkenHex(hex, 0.35), width: 2.25 }),
+    fill: new Fill({ color: hexToRgba(hex, 0.72) })
+  }));
+
+  const noDataStyle = new Style({
+    stroke: new Stroke({ color: '#6b7280', width: 1.5, lineDash: [4, 4] }),
+    fill: new Fill({ color: 'rgba(107,114,128,0.15)' })
+  });
+
+  return (feature, resolution) => {
+    const raw = feature.get(vs.field);
+    const val = parseFloat(raw);
+
+    if (raw == null || raw === '' || isNaN(val)) return noDataStyle;
+
+    const classIdx = getClassIndex(val, vs.breaks);
+    const baseStyle = cachedFills[Math.max(0, Math.min(classIdx, cachedFills.length - 1))];
+
+    const zoom = Math.log2(156543.03392 / resolution);
+    if (zoom < vs.zoomThreshold) return baseStyle;
+
+    const labelName = feature.get(vs.labelField || 'name') || '';
+    const formatted = formatVizValue(val, vs.format);
+    const labelText = labelName ? labelName + '\n' + formatted : formatted;
+
+    return [baseStyle, new Style({
+      text: new Text({
+        text: labelText,
+        font: '700 11px Inter, system-ui, sans-serif',
+        fill: new Fill({ color: '#ffffff' }),
+        stroke: new Stroke({ color: 'rgba(0,0,0,0.85)', width: 3.5 }),
+        overflow: true,
+        padding: [2, 4, 2, 4]
+      })
+    })];
+  };
+}
+
 function highlightStyleFactory() {
   const polyStyle = [
     new Style({
@@ -701,10 +772,20 @@ function App() {
   const heatmapLayerRefs = useRef({});
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+
   const [layerDraft, setLayerDraft] = useState({
     name: '',
     color: '#c084fc'
   });
+  const [uploadName, setUploadName] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploadSuccess, setUploadSuccess] = useState('');
+  const [selectedIncomeId, setSelectedIncomeId] = useState('');
+  const [selectedConsumptionId, setSelectedConsumptionId] = useState('');
+  const [calculationLoading, setCalculationLoading] = useState(false);
+  const [calculationError, setCalculationError] = useState('');
+
   const [featureDraft, setFeatureDraft] = useState({
     name: '',
     coordinates: null
@@ -717,6 +798,8 @@ function App() {
   const fetchKnowledgeContextRef = useRef(null);
   const queryPointElevationRef = useRef(null);
   const openFeatureDialogRef = useRef(null);
+  const activeSidebarTabRef = useRef('layers');
+  const selectedH3CellRef = useRef(null);
   const [hoveredMarkerInfo, setHoveredMarkerInfo] = useState(null);
   const hoverTooltipRef = useRef(null);
 
@@ -763,6 +846,7 @@ function App() {
   const [spatialFeaturesLoading, setSpatialFeaturesLoading] = useState(false);
   const [spatialFeaturesError, setSpatialFeaturesError] = useState(null);
   const [h3GridData, setH3GridData] = useState(null);
+  const [selectedH3Cell, setSelectedH3Cell] = useState(null);
   const [h3GridLoading, setH3GridLoading] = useState(false);
   const [h3GridError, setH3GridError] = useState(null);
   const [h3LayerVisible, setH3LayerVisible] = useState(false);
@@ -771,6 +855,7 @@ function App() {
   const h3LayerRef = useRef(null);
   const fetchH3GridRef = useRef(null);
   const [decisionSubTab, setDecisionSubTab] = useState('general');
+  const [activeGridCategory, setActiveGridCategory] = useState('employment');
   const [knowledgeRadius, setKnowledgeRadius] = useState(2000); 
   const [showBuffer, setShowBuffer] = useState(true);
   const [expandedAreaCards, setExpandedAreaCards] = useState({});
@@ -797,6 +882,50 @@ function App() {
   useEffect(() => {
     intelEntitiesRef.current = intelEntities;
   }, [intelEntities]);
+
+  useEffect(() => {
+    async function loadInitialDatasets() {
+      try {
+        const res = await fetch('/api/datasets');
+        if (res.ok) {
+          const dataList = await res.json();
+          for (const ds of dataList) {
+            const geoRes = await fetch(`/api/datasets/${ds.id}/geojson`);
+            if (geoRes.ok) {
+              const geojson = await geoRes.json();
+              const newLayer = {
+                id: ds.id,
+                name: ds.name,
+                fileName: ds.sourceFilename,
+                sourceType: 'kml',
+                visible: true,
+                opacity: 0.8,
+                color: ds.name.toLowerCase().includes('saving') ? '#38bdf8' : (ds.name.toLowerCase().includes('income') ? '#4ade80' : '#f87171'),
+                labels: false,
+                order: layers.length,
+                metadata: {
+                  datasetId: ds.id,
+                  featureCount: ds.featureCount,
+                  geometryType: ds.geometryType,
+                  attributes: ds.attributes,
+                  boundingBox: ds.boundingBox,
+                  uploadTimestamp: ds.uploadTimestamp
+                },
+                geojson
+              };
+              setLayers(current => {
+                if (current.some(l => l.id === ds.id)) return current;
+                return [...current, newLayer];
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load initial datasets", err);
+      }
+    }
+    loadInitialDatasets();
+  }, []);
 
 
 
@@ -1411,14 +1540,21 @@ out center;`;
     }
   }, [showStatus]);
 
-  const fetchH3Grid = useCallback(async (lat, lon, polygonCoords = null) => {
-    console.log("fetchH3Grid triggered:", lat, lon, polygonCoords);
+  const fetchH3Grid = useCallback(async (lat, lon, polygonCoords = null, overrideKRing = null) => {
+    console.log("fetchH3Grid triggered:", lat, lon, polygonCoords, "overrideKRing:", overrideKRing);
     setH3GridLoading(true);
     setH3GridError(null);
     try {
+      let kRingVal = 1;
+      if (overrideKRing !== null) {
+        kRingVal = overrideKRing;
+      } else if (activeSidebarTab === 'grid') {
+        kRingVal = 0;
+      }
+
       const body = polygonCoords 
         ? { polygon: polygonCoords, resolution: 9 }
-        : { latitude: lat, longitude: lon, resolution: 9, kRing: 1 };
+        : { latitude: lat, longitude: lon, resolution: 9, kRing: kRingVal };
 
       const res = await fetch('/api/h3/query', {
         method: 'POST',
@@ -1433,7 +1569,11 @@ out center;`;
       const data = await res.json();
       console.log("H3 data cells received:", data.cells?.length, data.cells);
       setH3GridData(data);
-      
+      if (data.cells && data.cells.length > 0) {
+        setSelectedH3Cell(data.cells[0]);
+      } else {
+        setSelectedH3Cell(null);
+      }
       
       if (h3LayerRef.current) {
         console.log("h3LayerRef.current exists, visibility:", h3LayerRef.current.getVisible());
@@ -1482,7 +1622,7 @@ out center;`;
     } finally {
       setH3GridLoading(false);
     }
-  }, [h3ColorMetric, h3LabelsVisible]);
+  }, [h3ColorMetric, h3LabelsVisible, activeSidebarTab]);
 
   const fetchKnowledgeContext = useCallback(async (lonLatOrPolygon, isPolygon = false, customRadius) => {
     setActiveSidebarTab('decision');
@@ -1703,8 +1843,26 @@ out center;`;
     if (drawModeRef.current !== 'None') {
       return;
     }
+    if (activeSidebarTabRef.current === 'grid') {
+      const [lon, lat] = coordinates;
+      if (selectedH3CellRef.current && selectedH3CellRef.current.boundary) {
+        const pt = [lon, lat];
+        const polyCoords = [selectedH3CellRef.current.boundary.map(bp => [bp[1], bp[0]])];
+        if (isPointInPolygon(pt, polyCoords)) {
+          console.log("Cesium point clicked inside currently selected grid cell, skipping fetch.");
+          return;
+        }
+      }
+      if (fetchH3GridRef.current) {
+        fetchH3GridRef.current(lat, lon, null, 0);
+      }
+      return;
+    }
     if (decisionSupportModeRef.current && fetchKnowledgeContextRef.current) {
       fetchKnowledgeContextRef.current(coordinates);
+    } else if (fetchH3GridRef.current) {
+      const [lon, lat] = coordinates;
+      fetchH3GridRef.current(lat, lon);
     }
   }, []);
 
@@ -1986,6 +2144,14 @@ out center;`;
       setIsSearching(false);
     }
   }, [searchQuery, showStatus]);
+
+  useEffect(() => {
+    activeSidebarTabRef.current = activeSidebarTab;
+  }, [activeSidebarTab]);
+
+  useEffect(() => {
+    selectedH3CellRef.current = selectedH3Cell;
+  }, [selectedH3Cell]);
 
   useEffect(() => {
     fetchKnowledgeContextRef.current = fetchKnowledgeContext;
@@ -2288,6 +2454,7 @@ out center;`;
       const pixel = map.getEventPixel(event.originalEvent);
       let foundMarker = null;
       let foundLulcClass = null;
+      let foundDatasetFeature = null;
 
       map.forEachFeatureAtPixel(pixel, (feature, layer) => {
         
@@ -2295,7 +2462,7 @@ out center;`;
           const cn = feature.get('className');
           if (cn) foundLulcClass = cn;
         }
-        if (foundMarker) return;
+        if (foundMarker || foundDatasetFeature) return;
         if (layer && layer.get('kind') === 'data') {
           const layerId = layer.get('layerId');
           if (layerId === activeLayerIdRef.current) {
@@ -2303,6 +2470,10 @@ out center;`;
             if (geom && (geom.getType() === 'Point' || geom.getType() === 'MultiPoint')) {
               foundMarker = feature;
             }
+          }
+          const geom = feature.getGeometry();
+          if (geom && (geom.getType() === 'Polygon' || geom.getType() === 'MultiPolygon')) {
+            foundDatasetFeature = feature;
           }
         }
       });
@@ -2320,6 +2491,16 @@ out center;`;
 
         setHoveredMarkerInfo({ name, category, coordinates: coords });
         hoverTooltipOverlay.setPosition(geom.getCoordinates());
+      } else if (foundDatasetFeature) {
+        map.getTargetElement().style.cursor = 'pointer';
+        const props = foundDatasetFeature.getProperties();
+        const name = props.name || props.title || 'Unnamed Zone';
+        const attrs = {};
+        for (const [k, v] of Object.entries(props)) {
+          if (!k.startsWith('__') && k !== 'geometry' && v != null) attrs[k] = v;
+        }
+        setHoveredMarkerInfo({ name, category: props.__layerName || 'Dataset', attributes: attrs, coordinates: toLonLat(event.coordinate) });
+        hoverTooltipOverlay.setPosition(event.coordinate);
       } else if (foundLulcClass) {
         map.getTargetElement().style.cursor = 'crosshair';
         hoverTooltipOverlay.setPosition(undefined);
@@ -2386,6 +2567,22 @@ out center;`;
       }
 
       
+      if (activeSidebarTabRef.current === 'grid') {
+        const [lon, lat] = coordinates;
+        if (selectedH3CellRef.current && selectedH3CellRef.current.boundary) {
+          const pt = [lon, lat];
+          const polyCoords = [selectedH3CellRef.current.boundary.map(bp => [bp[1], bp[0]])];
+          if (isPointInPolygon(pt, polyCoords)) {
+            console.log("Point clicked is inside currently selected grid cell, skipping fetch.");
+            return;
+          }
+        }
+        if (fetchH3GridRef.current) {
+          fetchH3GridRef.current(lat, lon, null, 0);
+        }
+        return;
+      }
+
       if (decisionSupportModeRef.current && fetchKnowledgeContextRef.current) {
         fetchKnowledgeContextRef.current(coordinates);
       } else if (fetchH3GridRef.current) {
@@ -2609,7 +2806,7 @@ out center;`;
       if (vectorLayer) {
         vectorLayer.setOpacity(layer.opacity);
         vectorLayer.setVisible(!showHeatmap && layer.visible);
-        vectorLayer.setStyle(layerStyleFactory(layer));
+        vectorLayer.setStyle((layer.sourceType === 'kml' && layer.metadata?.vizSchema) ? datasetStyleFactory(layer) : layerStyleFactory(layer));
 
         const source = vectorLayer.getSource();
         source.clear();
@@ -2624,7 +2821,7 @@ out center;`;
           source: vectorSource,
           opacity: layer.opacity,
           visible: !showHeatmap && layer.visible,
-          style: layerStyleFactory(layer)
+          style: (layer.sourceType === 'kml' && layer.metadata?.vizSchema) ? datasetStyleFactory(layer) : layerStyleFactory(layer)
         });
         vectorLayer.set('kind', 'data');
         vectorLayer.set('layerId', layer.id);
@@ -2752,8 +2949,15 @@ out center;`;
     });
   }
 
-  function removeLayer(layerId) {
+  async function removeLayer(layerId) {
     setLayers((current) => current.filter((layer) => layer.id !== layerId));
+    try {
+      await fetch(`/api/datasets/${layerId}`, {
+        method: 'DELETE'
+      });
+    } catch (e) {
+      console.error("Failed to delete dataset from registry", e);
+    }
   }
 
   function zoomToLayer(layerId) {
@@ -3169,6 +3373,31 @@ out center;`;
           <button
             type="button"
             onClick={() => {
+              setActiveSidebarTab('grid');
+              setH3LayerVisible(true);
+              setMarkerModeEnabled(false);
+              setDrawMode('None');
+              setElevationQueryMode(false);
+              setDecisionSupportModeEnabled(false);
+              setH3GridData(null);
+              setSelectedH3Cell(null);
+              if (h3LayerRef.current) {
+                h3LayerRef.current.getSource().clear();
+              }
+              showStatus('Click anywhere on the map to inspect that specific grid cell.');
+            }}
+            className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              activeSidebarTab === 'grid'
+                ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+            <span>Grid Info</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               setActiveSidebarTab('decision');
               setMarkerModeEnabled(false);
               setDrawMode('None');
@@ -3199,7 +3428,285 @@ out center;`;
             <ClipboardList className="h-4 w-4" />
             <span>Pin Reports</span>
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSidebarTab('datasets');
+              setMarkerModeEnabled(false);
+              setDrawMode('None');
+              showStatus('Upload KML datasets and compute derived layers.');
+            }}
+            className={`flex-1 rounded-xl py-2 text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+              activeSidebarTab === 'datasets'
+                ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-400/25'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add Dataset</span>
+          </button>
         </div>
+
+        {activeSidebarTab === 'datasets' && (
+          <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
+            <div>
+              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300 font-bold">
+                <Plus className="h-4 w-4 text-cyan-400" />
+                Add Dataset
+              </h2>
+              <p className="text-[11px] text-slate-400 mt-1">Upload external KML spatial datasets to convert them to map layers.</p>
+            </div>
+
+            {/* Upload form */}
+            <div className="space-y-3 bg-white/5 border border-white/5 rounded-2xl p-4">
+              <div>
+                <label className="block text-[10px] uppercase tracking-[0.1em] text-slate-400 mb-1">Dataset Name (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="Auto-filled from filename"
+                  value={uploadName}
+                  onChange={(e) => setUploadName(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase tracking-[0.1em] text-slate-400 mb-1">Select KML File</label>
+                <input
+                  type="file"
+                  accept=".kml"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file && !uploadName) {
+                      setUploadName(file.name.replace(".kml", ""));
+                    }
+                  }}
+                  className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[11px] file:font-semibold file:bg-cyan-400/10 file:text-cyan-300 hover:file:bg-cyan-400/20 file:cursor-pointer cursor-pointer"
+                  id="kml-file-input"
+                />
+              </div>
+
+              <button
+                type="button"
+                disabled={uploading}
+                onClick={async () => {
+                  const fileInput = document.getElementById('kml-file-input');
+                  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                    setUploadError('Please select a KML file to upload.');
+                    return;
+                  }
+                  setUploading(true);
+                  setUploadError('');
+                  setUploadSuccess('');
+                  const file = fileInput.files[0];
+                  const formData = new FormData();
+                  formData.append('file', file);
+                  if (uploadName.trim()) {
+                    formData.append('name', uploadName.trim());
+                  }
+
+                  try {
+                    const res = await fetch('/api/datasets/upload', {
+                      method: 'POST',
+                      body: formData
+                    });
+                    if (!res.ok) {
+                      const errData = await res.json();
+                      throw new Error(errData.error || 'Failed to upload dataset');
+                    }
+                    const dataset = await res.json();
+                    setUploadSuccess(`Successfully uploaded layer: ${dataset.name}`);
+                    setUploadName('');
+                    fileInput.value = '';
+
+                    // Fetch its GeoJSON and register as dynamic layer
+                    const geoRes = await fetch(`/api/datasets/${dataset.id}/geojson`);
+                    if (geoRes.ok) {
+                      const geojson = await geoRes.json();
+                      const newLayer = {
+                        id: dataset.id,
+                        name: dataset.name,
+                        fileName: dataset.sourceFilename,
+                        sourceType: 'kml',
+                        visible: true,
+                        opacity: 0.8,
+                        color: dataset.name.toLowerCase().includes('saving') ? '#38bdf8' : (dataset.name.toLowerCase().includes('income') ? '#4ade80' : '#f87171'),
+                        labels: false,
+                        order: layers.length,
+                        metadata: {
+                          datasetId: dataset.id,
+                          featureCount: dataset.featureCount,
+                          geometryType: dataset.geometryType,
+                          attributes: dataset.attributes,
+                          boundingBox: dataset.boundingBox,
+                          uploadTimestamp: dataset.uploadTimestamp
+                        },
+                        geojson
+                      };
+                      setLayers((current) => [...current, newLayer]);
+                      showStatus(`Layer ${dataset.name} added to map.`);
+                    }
+                  } catch (err) {
+                    setUploadError(err.message);
+                  } finally {
+                    setUploading(false);
+                  }
+                }}
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-350 disabled:bg-slate-800 text-slate-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_12px_rgba(34,211,238,0.15)] disabled:text-slate-650 cursor-pointer"
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  'Upload KML Dataset'
+                )}
+              </button>
+
+              {uploadError && <p className="text-[11px] text-rose-400 font-semibold leading-relaxed">{uploadError}</p>}
+              {uploadSuccess && <p className="text-[11px] text-emerald-400 font-semibold leading-relaxed">{uploadSuccess}</p>}
+            </div>
+
+            {/* Derived Layers Computation */}
+            <div>
+              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-[0.15em] mb-2">Derived Layer Calculations</h3>
+              <div className="space-y-3 bg-white/5 border border-white/5 rounded-2xl p-4">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-[0.1em] text-slate-400 mb-1">Select Income Layer</label>
+                  <select
+                    value={selectedIncomeId}
+                    onChange={(e) => setSelectedIncomeId(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400 transition-all cursor-pointer"
+                  >
+                    <option value="">-- Choose Dataset --</option>
+                    {layers.filter(l => l.sourceType === 'kml' && l.name.toLowerCase().includes('income')).map(l => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase tracking-[0.1em] text-slate-400 mb-1">Select Consumption Layer</label>
+                  <select
+                    value={selectedConsumptionId}
+                    onChange={(e) => setSelectedConsumptionId(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400 transition-all cursor-pointer"
+                  >
+                    <option value="">-- Choose Dataset --</option>
+                    {layers.filter(l => l.sourceType === 'kml' && l.name.toLowerCase().includes('consumption')).map(l => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={calculationLoading || !selectedIncomeId || !selectedConsumptionId}
+                  onClick={async () => {
+                    setCalculationLoading(true);
+                    setCalculationError('');
+                    try {
+                      const res = await fetch('/api/datasets/derived/calculate', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                          metric: 'savings',
+                          inputs: [selectedIncomeId, selectedConsumptionId],
+                          name: 'Savings Layer'
+                        })
+                      });
+                      if (!res.ok) {
+                        const errData = await res.json();
+                        throw new Error(errData.error || 'Failed to calculate savings');
+                      }
+                      const dataset = await res.json();
+                      const geoRes = await fetch(`/api/datasets/${dataset.id}/geojson`);
+                      if (geoRes.ok) {
+                        const geojson = await geoRes.json();
+                        const newLayer = {
+                          id: dataset.id,
+                          name: dataset.name,
+                          fileName: dataset.sourceFilename,
+                          sourceType: 'kml',
+                          visible: true,
+                          opacity: 0.8,
+                          color: '#38bdf8', // Sky blue for savings
+                          labels: false,
+                          order: layers.length,
+                          metadata: {
+                            datasetId: dataset.id,
+                            featureCount: dataset.featureCount,
+                            geometryType: dataset.geometryType,
+                            attributes: dataset.attributes,
+                            boundingBox: dataset.boundingBox,
+                            uploadTimestamp: dataset.uploadTimestamp
+                          },
+                          geojson
+                        };
+                        setLayers((current) => [...current, newLayer]);
+                        showStatus(`Savings Layer generated successfully.`);
+                      }
+                    } catch (err) {
+                      setCalculationError(err.message);
+                    } finally {
+                      setCalculationLoading(false);
+                    }
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-350 disabled:bg-slate-800 text-slate-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_12px_rgba(34,211,238,0.15)] disabled:text-slate-650 cursor-pointer"
+                >
+                  {calculationLoading ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Computing Savings...
+                    </>
+                  ) : (
+                    'Calculate Savings Layer'
+                  )}
+                </button>
+
+                {calculationError && <p className="text-[11px] text-rose-400 font-semibold leading-relaxed">{calculationError}</p>}
+              </div>
+            </div>
+
+            {/* Discrete Legends */}
+            {layers.filter(l => l.sourceType === 'kml' && l.visible && l.metadata?.vizSchema).length > 0 && (
+              <div>
+                <h3 className="text-xs font-bold text-slate-300 uppercase tracking-[0.15em] mb-2">Layer Legends</h3>
+                <div className="space-y-3">
+                  {layers.filter(l => l.sourceType === 'kml' && l.visible && l.metadata?.vizSchema).map(l => {
+                    const vs = l.metadata.vizSchema;
+                    return (
+                      <div key={l.id} className="bg-white/5 border border-white/5 rounded-2xl p-3">
+                        <p className="text-[11px] font-bold text-slate-200 mb-0.5">{l.name}</p>
+                        <p className="text-[9px] uppercase tracking-widest text-slate-500 mb-2">
+                          {vs.field} · {vs.classification.replace('_',' ')} · v{vs.version}
+                        </p>
+                        <div className="space-y-1">
+                          {vs.classColors.map((color, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                              <div className="w-4 h-3 rounded-sm shrink-0 border border-white/20" style={{backgroundColor: color}} />
+                              <span className="text-[10px] text-slate-300">
+                                {formatVizValue(vs.breaks[i], vs.format)} — {formatVizValue(vs.breaks[i+1], vs.format)}
+                              </span>
+                            </div>
+                          ))}
+                          <div className="flex items-center gap-2">
+                            <div className="w-4 h-3 rounded-sm shrink-0 border border-dashed border-white/20" style={{backgroundColor: vs.noDataColor}} />
+                            <span className="text-[10px] text-slate-400 italic">No Data</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+          </div>
+        )}
 
         {activeSidebarTab === 'layers' && (
           <>
@@ -3714,14 +4221,7 @@ out center;`;
                                       <span>({Math.round(cls.area).toLocaleString()} m²)</span>
                                     </div>
                                   </div>
-                                  
-                                  <div className="h-1.5 w-full bg-slate-900/60 rounded-full overflow-hidden border border-white/5">
-                                    <div
-                                      className="h-full transition-all duration-500 rounded-full"
-                                      style={{ width: `${cls.percentage}%`, backgroundColor: hexColor }}
-                                    />
                                   </div>
-                                </div>
                               );
                             })
                           ) : (
@@ -4310,69 +4810,467 @@ if (typeof raw === 'string') {
                 </div>
 
                 
-                <div className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
-                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5 font-sans">
-                      <span>🔷</span> H3 Spatial Grid (POC)
-                    </span>
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold text-slate-300 select-none">
-                      <input
-                        type="checkbox"
-                        checked={h3LayerVisible}
-                        onChange={(e) => setH3LayerVisible(e.target.checked)}
-                        className="rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500 h-3 w-3 accent-cyan-400 cursor-pointer pointer-events-auto"
-                      />
-                      <span>Show Grid</span>
-                    </label>
-                  </div>
+                {/* H3 Spatial Grid has been moved to its own dedicated Grid Info tab */}
+              </div>
+            )}
+          </div>
+        )}
 
-                  <div className="space-y-2 text-xs">
-                    {h3GridLoading ? (
-                      <div className="flex items-center justify-center py-4 text-[10px] text-slate-400 gap-2">
-                        <Loader2 className="h-4.5 w-4.5 animate-spin text-cyan-400" />
-                        <span>Generating spatial grids...</span>
+        {/* New Dedicated Grid Info Tab */}
+        {activeSidebarTab === 'grid' && (
+          <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-4 pointer-events-auto">
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+                <LayoutGrid className="h-4 w-4 text-cyan-400" />
+                Grid Analysis
+              </h2>
+              <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold text-slate-300 select-none">
+                <input
+                  type="checkbox"
+                  checked={h3LayerVisible}
+                  onChange={(e) => setH3LayerVisible(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500 h-3 w-3 accent-cyan-400 cursor-pointer pointer-events-auto"
+                />
+                <span>Show Grid Outline</span>
+              </label>
+            </div>
+
+            {h3GridLoading ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400 text-xs">
+                <Loader2 className="h-8 w-8 animate-spin text-cyan-400 mb-3" />
+                <span>Loading grid details...</span>
+              </div>
+            ) : h3GridError ? (
+              <div className="text-xs text-rose-400 bg-rose-950/20 border border-rose-900/30 rounded-2xl p-4 text-center space-y-2">
+                <p className="font-semibold">Loading Failed</p>
+                <p className="text-[11px] text-slate-400">{h3GridError}</p>
+                <p className="text-[10px] text-slate-500 italic mt-2">Click on the map to query a valid grid cell.</p>
+              </div>
+            ) : !selectedH3Cell ? (
+              <div className="rounded-2xl border border-dashed border-white/10 bg-slate-900/20 p-6 text-xs text-slate-400 italic leading-relaxed text-center space-y-3">
+                <div className="flex justify-center">
+                  <LayoutGrid className="h-8 w-8 text-cyan-400/50 animate-pulse" />
+                </div>
+                <p className="font-semibold text-slate-300">Select Grid Cell</p>
+                <p className="text-[11px] text-slate-400 leading-normal">
+                  Click anywhere on the map to inspect its H3 grid cell properties and socio-economic survey data.
+                </p>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col gap-4 overflow-y-auto pr-1 custom-scrollbar max-h-[66vh]">
+                <div className="rounded-2xl border border-white/5 bg-slate-900/60 p-4 space-y-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-[8px] uppercase tracking-wider text-slate-500 font-bold block">Active H3 Grid Index</span>
+                      <span className="font-mono text-xs font-bold text-cyan-400 block">{selectedH3Cell.h3Index}</span>
+                      <span className="text-slate-400 text-[10px] block mt-0.5 font-mono">Centroid: {selectedH3Cell.centerLat.toFixed(5)}, {selectedH3Cell.centerLon.toFixed(5)}</span>
+                    </div>
+                    {selectedH3Cell.statisticalData?.state && (
+                      <div className="text-right">
+                        <span className="text-[8px] uppercase tracking-wider text-slate-500 font-bold block">Region</span>
+                        <span className="text-xs font-bold text-slate-200 block">{selectedH3Cell.statisticalData.state}</span>
+                        <span className="text-[10px] text-slate-400 block">{selectedH3Cell.statisticalData.district || 'Varanasi District'}</span>
                       </div>
-                    ) : h3GridError ? (
-                      <p className="text-[10px] text-rose-400 bg-rose-950/20 px-2.5 py-1.5 rounded-lg border border-rose-900/35 text-center font-medium">
-                        {h3GridError}
-                      </p>
-                    ) : h3GridData?.cells?.length > 0 ? (
-                      <div className="space-y-2 pt-1">
-                        <span className="text-[8px] uppercase tracking-wider text-slate-500 font-bold block">
-                          GRID CELLS ({h3GridData.cells.length} cells at Resolution {h3GridData.resolution})
-                        </span>
-                        
-                        <div className="space-y-1.5 max-h-[22vh] overflow-y-auto pr-0.5 custom-scrollbar pointer-events-auto">
-                          {h3GridData.cells.map(cell => {
-                            return (
-                              <div
-                                key={cell.h3Index}
-                                onClick={() => {
-                                  if (mapRef.current) {
-                                    const centerCoord = fromLonLat([cell.centerLon, cell.centerLat]);
-                                    mapRef.current.getView().animate({ center: centerCoord, zoom: 15, duration: 500 });
-                                  }
-                                }}
-                                className="p-2.5 rounded-xl border border-white/5 bg-slate-950/40 hover:bg-slate-900/40 hover:border-white/10 transition-all text-left cursor-pointer flex items-center justify-between"
-                              >
-                                <div className="space-y-0.5">
-                                  <span className="font-mono font-bold text-cyan-300 text-[10px] block">{cell.h3Index}</span>
-                                  <span className="text-slate-500 text-[8.5px]">Center: {cell.centerLat.toFixed(4)}, {cell.centerLon.toFixed(4)}</span>
-                                </div>
-                                <span className="text-[8.5px] font-bold text-slate-400 uppercase tracking-wide">Grid Cell</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-slate-500 italic text-center py-1 font-sans">
-                        Select a point to load neighborhood grid overlays.
-                      </p>
                     )}
                   </div>
                 </div>
 
+                <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-slate-950/80 border border-white/5 shadow-inner">
+                  {[
+                    { id: 'employment', label: 'Labor & Gender' },
+                    { id: 'economic', label: 'Economic' },
+                    { id: 'social', label: 'Social & Health' },
+                    { id: 'environmental', label: 'Agri & Environment' }
+                  ].map(cat => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setActiveGridCategory(cat.id)}
+                      className={`flex-1 px-1.5 py-1.5 rounded-lg text-[9px] font-bold tracking-wide uppercase transition-all text-center ${
+                        activeGridCategory === cat.id
+                          ? 'bg-slate-800 text-cyan-400 shadow-sm border border-white/5 font-extrabold'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                      }`}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+
+                {selectedH3Cell.statisticalData?.datasets ? (
+                  <div className="space-y-3.5">
+                    {(() => {
+                      const datasets = selectedH3Cell.statisticalData.datasets;
+                      const configs = [
+                        {
+                          id: 'PLFS',
+                          category: 'employment',
+                          name: 'Periodic Labour Force Survey (PLFS)',
+                          desc: 'Employment status, unemployment rate, and labor force participation details.',
+                          data: datasets.PLFS,
+                          render: (d) => (
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between items-center py-1 border-b border-white/5">
+                                <span className="text-slate-400">Unemployment Rate</span>
+                                <span className="font-mono font-bold text-slate-200">{d.UR?.value ?? 0}{d.UR?.unit || '%'}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1 border-b border-white/5">
+                                <span className="text-slate-400">Employed Ratio</span>
+                                <span className="font-mono font-bold text-slate-200">{d.WPR?.value ?? 0}{d.WPR?.unit || '%'}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1">
+                                <span className="text-slate-400">Labor Force Participation</span>
+                                <span className="font-mono font-bold text-slate-200">{d.LFPR?.value ?? 0}{d.LFPR?.unit || '%'}</span>
+                              </div>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'GENDER',
+                          category: 'employment',
+                          name: 'Gender Statistics (GENDER)',
+                          desc: 'Sex ratios and demographic indicators.',
+                          data: datasets.GENDER,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Sex Ratio (Females per 1000 Males)</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Sex_Ratio?.value || 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'TUS',
+                          category: 'employment',
+                          name: 'Time Use Survey (TUS)',
+                          desc: 'Wages, routine allocations, and time distribution.',
+                          data: datasets.TUS,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Daily Time Allocation Index</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Indicator?.value || 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'CPI',
+                          category: 'economic',
+                          name: 'Consumer Price Index (CPI)',
+                          desc: 'Retail inflation trends and cost of living metrics.',
+                          data: datasets.CPI,
+                          render: (d) => (
+                            <div className="space-y-1.5 text-xs">
+                              <div className="flex justify-between items-center py-1 border-b border-white/5">
+                                <span className="text-slate-400">General Cost Index</span>
+                                <span className="font-mono font-bold text-slate-200">{d.General?.value || 'N/A'}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1 border-b border-white/5">
+                                <span className="text-slate-400">Food Price Index</span>
+                                <span className="font-mono font-bold text-slate-200">{d.Food_and_Beverages?.value || 'N/A'}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1">
+                                <span className="text-slate-400">Fuel & Power Index</span>
+                                <span className="font-mono font-bold text-slate-200">{d.Fuel_and_Light?.value || 'N/A'}</span>
+                              </div>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'WPI',
+                          category: 'economic',
+                          name: 'Wholesale Price Index (WPI)',
+                          desc: 'Wholesale inflation trends and commodity index calculations.',
+                          data: datasets.WPI,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">All Commodities Index</span>
+                              <span className="font-mono font-bold text-slate-200">{d.All_Commodities?.value || 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'IIP',
+                          category: 'economic',
+                          name: 'Index of Industrial Production (IIP)',
+                          desc: 'Growth rate and index values for industrial output.',
+                          data: datasets.IIP,
+                          render: (d) => (
+                            <div className="space-y-1.5 text-xs">
+                              <div className="flex justify-between items-center py-1 border-b border-white/5">
+                                <span className="text-slate-400">Industrial Growth Rate</span>
+                                <span className="font-mono font-bold text-cyan-400">{d.General?.growth_rate ?? 'N/A'}%</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1">
+                                <span className="text-slate-400">General Index Value</span>
+                                <span className="font-mono font-bold text-slate-200">{d.General?.index ?? 'N/A'}</span>
+                              </div>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'ASI',
+                          category: 'economic',
+                          name: 'Annual Survey of Industries (ASI)',
+                          desc: 'Financials and workforce sizes in registered factories.',
+                          data: datasets.ASI,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Total Factories Count</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Factories?.value ? d.Factories.value.toLocaleString('en-IN') : 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'ASUSE',
+                          category: 'economic',
+                          name: 'Unincorporated Enterprises (ASUSE)',
+                          desc: 'Informal economy, small businesses, and MSME data.',
+                          data: datasets.ASUSE,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Informal Enterprises Count</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Enterprises?.value ? d.Enterprises.value.toLocaleString('en-IN') : 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'EC',
+                          category: 'economic',
+                          name: 'Economic Census (EC)',
+                          desc: 'Geographical count of commercial and operational enterprises.',
+                          data: datasets.EC,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Total Commercial Units</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Establishments?.value ? d.Establishments.value.toLocaleString('en-IN') : 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'NAS',
+                          category: 'economic',
+                          name: 'National Accounts Statistics (NAS)',
+                          desc: 'GDP growth estimates and local Gross Value Added (GVA).',
+                          data: datasets.NAS,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">GDP Value Index</span>
+                              <span className="font-mono font-bold text-slate-200">{d.GDP?.value ? d.GDP.value.toLocaleString('en-IN') : 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'RBI',
+                          category: 'economic',
+                          name: 'Reserve Bank of India Database (RBI)',
+                          desc: 'District-wise credit flow and financial indicators.',
+                          data: datasets.RBI,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Financial Credit Index</span>
+                              <span className="font-mono font-bold text-slate-200">₹{d.Indicator?.value ? d.Indicator.value.toLocaleString('en-IN') : 'N/A'} Cr</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'UDISE',
+                          category: 'social',
+                          name: 'School Education Survey (UDISE)',
+                          desc: 'School infrastructure quality and pupil-to-teacher ratios.',
+                          data: datasets.UDISE,
+                          render: (d) => (
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div className="bg-slate-950/40 p-2.5 rounded-xl border border-white/5 space-y-1">
+                                <span className="text-[10px] text-slate-400 block font-medium">Pupil-Teacher Ratio</span>
+                                <span className="font-mono text-sm font-bold text-emerald-300">1 : {d.Pupil_Teacher_Ratio?.value || 'N/A'}</span>
+                              </div>
+                              <div className="bg-slate-950/40 p-2.5 rounded-xl border border-white/5 space-y-1">
+                                <span className="text-[10px] text-slate-400 block">Total Schools</span>
+                                <span className="font-mono text-sm font-bold text-slate-200">{d.Total_Schools?.value ? d.Total_Schools.value.toLocaleString('en-IN') : 'N/A'}</span>
+                              </div>
+                              <div className="bg-slate-950/40 p-2.5 rounded-xl border border-white/5 space-y-1">
+                                <span className="text-[10px] text-slate-400 block">Total Enrolments</span>
+                                <span className="font-mono text-sm font-bold text-slate-200">{d.Total_Enrolments?.value ? d.Total_Enrolments.value.toLocaleString('en-IN') : 'N/A'}</span>
+                              </div>
+                              <div className="bg-slate-950/40 p-2.5 rounded-xl border border-white/5 space-y-1">
+                                <span className="text-[10px] text-slate-400 block">Total Teachers</span>
+                                <span className="font-mono text-sm font-bold text-slate-200">{d.Total_Teachers?.value ? d.Total_Teachers.value.toLocaleString('en-IN') : 'N/A'}</span>
+                              </div>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'AISHE',
+                          category: 'social',
+                          name: 'Higher Education Survey (AISHE)',
+                          desc: 'University and college counts, student enrolment ratios.',
+                          data: datasets.AISHE,
+                          render: (d) => (
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div className="bg-slate-950/40 p-2.5 rounded-xl border border-white/5 space-y-1">
+                                <span className="text-[10px] text-slate-400 block">Colleges Count</span>
+                                <span className="font-mono text-sm font-bold text-slate-200">{d.Colleges?.value ? d.Colleges.value.toLocaleString('en-IN') : 'N/A'}</span>
+                              </div>
+                              <div className="bg-slate-950/40 p-2.5 rounded-xl border border-white/5 space-y-1">
+                                <span className="text-[10px] text-slate-400 block">Universities Count</span>
+                                <span className="font-mono text-sm font-bold text-slate-200">{d.Universities?.value ? d.Universities.value.toLocaleString('en-IN') : 'N/A'}</span>
+                              </div>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'NFHS',
+                          category: 'social',
+                          name: 'National Family Health Survey (NFHS)',
+                          desc: 'Local development and family health status indicators.',
+                          data: datasets.NFHS,
+                          render: (d) => (
+                            <div className="space-y-2 text-xs">
+                              <div className="flex justify-between items-center py-1 border-b border-white/5">
+                                <span className="text-slate-400">Safe Drinking Water</span>
+                                <span className="font-mono font-bold text-slate-200">{d.Improved_Water?.value ? `${d.Improved_Water.value}%` : 'N/A'}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1 border-b border-white/5">
+                                <span className="text-slate-400">Hygienic Sanitation</span>
+                                <span className="font-mono font-bold text-slate-200">{d.Improved_Sanitation?.value ? `${d.Improved_Sanitation.value}%` : 'N/A'}</span>
+                              </div>
+                              <div className="flex justify-between items-center py-1">
+                                <span className="text-slate-400">Clean Cooking Fuel</span>
+                                <span className="font-mono font-bold text-slate-200">{d.Clean_Cooking_Fuel?.value ? `${d.Clean_Cooking_Fuel.value}%` : 'N/A'}</span>
+                              </div>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'NSS79',
+                          category: 'social',
+                          name: 'Healthcare & Education Access (NSS 79th)',
+                          desc: 'Access to health facilities, AYUSH services, and education.',
+                          data: datasets.NSS79,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Healthcare Access Index</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Indicator?.value || 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'ENVSTATS',
+                          category: 'environmental',
+                          name: 'Environment Statistics (ENVSTATS)',
+                          desc: 'Temperature, weather, and environmental trends.',
+                          data: datasets.ENVSTATS,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Mean Annual Temperature</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Mean_Temperature?.value ? `${d.Mean_Temperature.value}°C` : 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'ENERGY',
+                          category: 'environmental',
+                          name: 'Energy Statistics (ENERGY)',
+                          desc: 'Energy resource allocation and consumption indices.',
+                          data: datasets.ENERGY,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Total Consumption Index</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Total_Consumption?.value ? d.Total_Consumption.value.toLocaleString('en-IN') : 'N/A'} {d.Total_Consumption?.unit || 'KToE'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'NSS77',
+                          category: 'environmental',
+                          name: 'Agricultural Households Survey (NSS 77th)',
+                          desc: 'Rural agriculture and landholdings.',
+                          data: datasets.NSS77,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Agricultural Households Index</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Indicator?.value || 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'NSS78',
+                          category: 'environmental',
+                          name: 'Household Living Conditions (NSS 78th)',
+                          desc: 'Domestic tourism and basic household amenities.',
+                          data: datasets.NSS78,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Living Conditions Value</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Indicator?.value || 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'CPIALRL',
+                          category: 'environmental',
+                          name: 'CPI Agricultural & Rural Labor (CPIALRL)',
+                          desc: 'Wages and commodity price indices for agricultural laborers.',
+                          data: datasets.CPIALRL,
+                          render: (d) => (
+                            <div className="flex justify-between items-center text-xs py-0.5">
+                              <span className="text-slate-400">Laborer Price Index</span>
+                              <span className="font-mono font-bold text-slate-200">{d.Index?.value || 'N/A'}</span>
+                            </div>
+                          )
+                        },
+                        {
+                          id: 'HCES',
+                          category: 'environmental',
+                          name: 'Household Consumption Survey (HCES)',
+                          desc: 'Average monthly per capita consumption expenses.',
+                          data: datasets.HCES,
+                          render: (d) => (
+                            <div className="grid grid-cols-2 gap-3 text-xs">
+                              <div className="bg-slate-950/40 p-2.5 rounded-xl border border-white/5 space-y-1">
+                                <span className="text-[10px] text-slate-400 block">Rural MPCE</span>
+                                <span className="font-mono text-sm font-bold text-purple-300">₹{d.Rural?.value ? d.Rural.value.toLocaleString('en-IN') : 'N/A'}</span>
+                              </div>
+                              <div className="bg-slate-950/40 p-2.5 rounded-xl border border-white/5 space-y-1">
+                                <span className="text-[10px] text-slate-400 block">Urban MPCE</span>
+                                <span className="font-mono text-sm font-bold text-purple-300">₹{d.Urban?.value ? d.Urban.value.toLocaleString('en-IN') : 'N/A'}</span>
+                              </div>
+                            </div>
+                          )
+                        }
+                      ];
+
+                      const filtered = configs.filter(c => c.category === activeGridCategory);
+
+                      return filtered.map((c) => {
+                        const hasData = c.data && Object.keys(c.data).length > 0;
+                        return (
+                          <div key={c.id} className="rounded-2xl border border-white/5 bg-slate-900/40 p-4 space-y-3">
+                            <div>
+                              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-200 block">
+                                {c.name}
+                              </span>
+                              <p className="text-[10px] text-slate-500 mt-1 leading-normal">
+                                {c.desc}
+                              </p>
+                            </div>
+                            {hasData ? (
+                              c.render(c.data)
+                            ) : (
+                              <p className="text-[10px] text-slate-500 italic py-1">
+                                No active survey records returned for this region.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-slate-500 italic text-center py-4 flex items-center justify-center gap-1.5 bg-slate-900/30 rounded-2xl border border-white/5">
+                    <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                    <span>Fetching regional MoSPI data...</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -4627,19 +5525,6 @@ if (typeof raw === 'string') {
                   <span className="text-[10px] uppercase tracking-[0.1em] text-slate-400">Elevation</span>
                   <span className="text-lg font-bold text-white">{elevationQueryResult.elevation.toFixed(1)} m</span>
                 </div>
-                
-                <div className="h-1.5 w-full bg-slate-950/60 rounded-full overflow-hidden mt-2 border border-white/5">
-                  <div
-                    className="h-full bg-gradient-to-r from-emerald-400 to-cyan-400 rounded-full transition-all duration-300"
-                    style={{
-                      width: `${Math.max(0, Math.min(100, ((elevationQueryResult.elevation - 50) / 173) * 100))}%`
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between text-[8px] text-slate-500 mt-1">
-                  <span>Min: 50m</span>
-                  <span>Max: 223m</span>
-                </div>
               </div>
 
               
@@ -4753,10 +5638,27 @@ if (typeof raw === 'string') {
           className="pointer-events-none rounded-2xl border border-white/15 bg-slate-950/95 px-4 py-3 text-xs font-medium text-slate-100 shadow-2xl shadow-black/40 backdrop-blur-md transition-all"
         >
           {hoveredMarkerInfo && (
-            <div className="space-y-1">
-              <p className="font-semibold text-cyan-300 text-sm">{hoveredMarkerInfo.name}</p>
-              <p className="text-slate-400">Category: <span className="text-slate-200">{hoveredMarkerInfo.category}</span></p>
-              <p className="text-slate-400">Coords: <span className="text-cyan-100/90">{formatCoordinates(hoveredMarkerInfo.coordinates)}</span></p>
+            <div className="space-y-1.5 max-w-[220px]">
+              <p className="font-bold text-cyan-300 text-sm">{hoveredMarkerInfo.name}</p>
+              <p className="text-slate-500 text-[9px] uppercase tracking-widest">{hoveredMarkerInfo.category}</p>
+              {hoveredMarkerInfo.attributes ? (
+                <div className="space-y-0.5 pt-1.5 border-t border-white/10">
+                  {Object.entries(hoveredMarkerInfo.attributes)
+                    .filter(([k]) => !['name','description','geometry'].includes(k))
+                    .map(([k, v]) => (
+                      <div key={k} className="flex justify-between gap-3">
+                        <span className="text-slate-400 capitalize text-[10px]">{k.replace(/_/g,' ')}</span>
+                        <span className="text-white font-semibold text-[10px]">
+                          {typeof v === 'number' ? v.toLocaleString('en-IN') : String(v)}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                <>
+                  <p className="text-slate-400">Coords: <span className="text-cyan-100/90">{formatCoordinates(hoveredMarkerInfo.coordinates)}</span></p>
+                </>
+              )}
             </div>
           )}
         </div>
