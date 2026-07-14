@@ -3448,156 +3448,170 @@ out center;`;
         </div>
 
         {activeSidebarTab === 'datasets' && (
-          <div className="rounded-[24px] border border-white/10 bg-slate-950/70 p-5 shadow-2xl backdrop-blur-xl flex flex-col gap-4">
+          <div className="rounded-[24px] border border-white/10 bg-[#0d1117] p-5 shadow-2xl flex flex-col gap-6 overflow-y-auto custom-scrollbar">
+            
+            {/* Upload Section */}
             <div>
-              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300 font-bold">
-                <Plus className="h-4 w-4 text-cyan-400" />
+              <h2 className="flex items-center gap-2 text-sm uppercase tracking-widest text-white font-semibold mb-3">
+                <Plus className="h-4 w-4 text-cyan-400" strokeWidth={3} />
                 Add Dataset
               </h2>
-              <p className="text-[11px] text-slate-400 mt-1">Upload external KML spatial datasets to convert them to map layers.</p>
-            </div>
+              <p className="text-[12px] text-slate-400 mb-4 leading-relaxed">
+                Upload external KML spatial datasets to convert them to map layers.
+              </p>
 
-            {/* Upload form */}
-            <div className="space-y-3 bg-white/5 border border-white/5 rounded-2xl p-4">
-              <div>
-                <label className="block text-[10px] uppercase tracking-[0.1em] text-slate-400 mb-1">Dataset Name (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="Auto-filled from filename"
-                  value={uploadName}
-                  onChange={(e) => setUploadName(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400 transition-all"
-                />
-              </div>
+              <div className="bg-[#131720] border border-[#212631] rounded-2xl p-5 space-y-4">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-1.5 font-medium">Dataset Name (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="Auto-filled from filename"
+                    value={uploadName}
+                    onChange={(e) => setUploadName(e.target.value)}
+                    className="w-full rounded-xl border border-[#262c38] bg-[#1a1f2c] px-3.5 py-2.5 text-xs text-white outline-none focus:border-cyan-400/50 transition-all placeholder:text-slate-500"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-[10px] uppercase tracking-[0.1em] text-slate-400 mb-1">Select KML File</label>
-                <input
-                  type="file"
-                  accept=".kml"
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file && !uploadName) {
-                      setUploadName(file.name.replace(".kml", ""));
+                <div>
+                  <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-1.5 font-medium">Select KML File</label>
+                  <input
+                    type="file"
+                    accept=".kml"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file && !uploadName) {
+                        setUploadName(file.name.replace(".kml", ""));
+                      }
+                    }}
+                    className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-4 file:rounded-full file:border-0 file:text-[11px] file:font-semibold file:bg-[#1a2e3d] file:text-cyan-300 hover:file:bg-[#203a4c] file:cursor-pointer cursor-pointer transition-all"
+                    id="kml-file-input"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  disabled={uploading}
+                  onClick={async () => {
+                    const fileInput = document.getElementById('kml-file-input');
+                    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                      setUploadError('Please select a KML file to upload.');
+                      return;
+                    }
+                    setUploading(true);
+                    setUploadError('');
+                    setUploadSuccess('');
+                    const file = fileInput.files[0];
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    if (uploadName.trim()) {
+                      formData.append('name', uploadName.trim());
+                    }
+
+                    try {
+                      const res = await fetch('/api/datasets/upload', {
+                        method: 'POST',
+                        body: formData
+                      });
+                      if (!res.ok) {
+                        const errData = await res.json();
+                        throw new Error(errData.error || 'Failed to upload dataset');
+                      }
+                      const dataset = await res.json();
+                      setUploadSuccess(`Successfully uploaded layer: ${dataset.name}`);
+                      setUploadName('');
+                      fileInput.value = '';
+
+                      // Fetch its GeoJSON and register as dynamic layer
+                      const geoRes = await fetch(`/api/datasets/${dataset.id}/geojson`);
+                      if (geoRes.ok) {
+                        const geojson = await geoRes.json();
+                        const newLayer = {
+                          id: dataset.id,
+                          name: dataset.name,
+                          fileName: dataset.sourceFilename,
+                          sourceType: 'kml',
+                          visible: true,
+                          opacity: 0.8,
+                          color: dataset.name.toLowerCase().includes('saving') ? '#38bdf8' : (dataset.name.toLowerCase().includes('income') ? '#4ade80' : '#f87171'),
+                          labels: false,
+                          order: layers.length,
+                          metadata: {
+                            datasetId: dataset.id,
+                            featureCount: dataset.featureCount,
+                            geometryType: dataset.geometryType,
+                            attributes: dataset.attributes,
+                            boundingBox: dataset.boundingBox,
+                            uploadTimestamp: dataset.uploadTimestamp
+                          },
+                          geojson
+                        };
+                        setLayers((current) => [...current, newLayer]);
+                        showStatus(`Layer ${dataset.name} added to map.`);
+                      }
+                    } catch (err) {
+                      setUploadError(err.message);
+                    } finally {
+                      setUploading(false);
                     }
                   }}
-                  className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-[11px] file:font-semibold file:bg-cyan-400/10 file:text-cyan-300 hover:file:bg-cyan-400/20 file:cursor-pointer cursor-pointer"
-                  id="kml-file-input"
-                />
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 disabled:bg-slate-700 disabled:text-slate-400 text-[#0b101a] px-4 py-2.5 text-[13px] font-bold transition-all cursor-pointer"
+                >
+                  {uploading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    'Upload KML Dataset'
+                  )}
+                </button>
+
+                {uploadError && <p className="text-[11px] text-rose-400 font-semibold leading-relaxed">{uploadError}</p>}
+                {uploadSuccess && <p className="text-[12px] text-emerald-400 font-medium leading-relaxed">{uploadSuccess}</p>}
               </div>
-
-              <button
-                type="button"
-                disabled={uploading}
-                onClick={async () => {
-                  const fileInput = document.getElementById('kml-file-input');
-                  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-                    setUploadError('Please select a KML file to upload.');
-                    return;
-                  }
-                  setUploading(true);
-                  setUploadError('');
-                  setUploadSuccess('');
-                  const file = fileInput.files[0];
-                  const formData = new FormData();
-                  formData.append('file', file);
-                  if (uploadName.trim()) {
-                    formData.append('name', uploadName.trim());
-                  }
-
-                  try {
-                    const res = await fetch('/api/datasets/upload', {
-                      method: 'POST',
-                      body: formData
-                    });
-                    if (!res.ok) {
-                      const errData = await res.json();
-                      throw new Error(errData.error || 'Failed to upload dataset');
-                    }
-                    const dataset = await res.json();
-                    setUploadSuccess(`Successfully uploaded layer: ${dataset.name}`);
-                    setUploadName('');
-                    fileInput.value = '';
-
-                    // Fetch its GeoJSON and register as dynamic layer
-                    const geoRes = await fetch(`/api/datasets/${dataset.id}/geojson`);
-                    if (geoRes.ok) {
-                      const geojson = await geoRes.json();
-                      const newLayer = {
-                        id: dataset.id,
-                        name: dataset.name,
-                        fileName: dataset.sourceFilename,
-                        sourceType: 'kml',
-                        visible: true,
-                        opacity: 0.8,
-                        color: dataset.name.toLowerCase().includes('saving') ? '#38bdf8' : (dataset.name.toLowerCase().includes('income') ? '#4ade80' : '#f87171'),
-                        labels: false,
-                        order: layers.length,
-                        metadata: {
-                          datasetId: dataset.id,
-                          featureCount: dataset.featureCount,
-                          geometryType: dataset.geometryType,
-                          attributes: dataset.attributes,
-                          boundingBox: dataset.boundingBox,
-                          uploadTimestamp: dataset.uploadTimestamp
-                        },
-                        geojson
-                      };
-                      setLayers((current) => [...current, newLayer]);
-                      showStatus(`Layer ${dataset.name} added to map.`);
-                    }
-                  } catch (err) {
-                    setUploadError(err.message);
-                  } finally {
-                    setUploading(false);
-                  }
-                }}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-350 disabled:bg-slate-800 text-slate-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_12px_rgba(34,211,238,0.15)] disabled:text-slate-650 cursor-pointer"
-              >
-                {uploading ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  'Upload KML Dataset'
-                )}
-              </button>
-
-              {uploadError && <p className="text-[11px] text-rose-400 font-semibold leading-relaxed">{uploadError}</p>}
-              {uploadSuccess && <p className="text-[11px] text-emerald-400 font-semibold leading-relaxed">{uploadSuccess}</p>}
             </div>
 
             {/* Derived Layers Computation */}
             <div>
-              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-[0.15em] mb-2">Derived Layer Calculations</h3>
-              <div className="space-y-3 bg-white/5 border border-white/5 rounded-2xl p-4">
-                <div>
-                  <label className="block text-[10px] uppercase tracking-[0.1em] text-slate-400 mb-1">Select Income Layer</label>
-                  <select
-                    value={selectedIncomeId}
-                    onChange={(e) => setSelectedIncomeId(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400 transition-all cursor-pointer"
-                  >
-                    <option value="">-- Choose Dataset --</option>
-                    {layers.filter(l => l.sourceType === 'kml' && l.name.toLowerCase().includes('income')).map(l => (
-                      <option key={l.id} value={l.id}>{l.name}</option>
-                    ))}
-                  </select>
+              <h2 className="text-sm font-bold text-white uppercase tracking-widest mb-3 mt-2">Derived Layer Calculations</h2>
+              <div className="bg-[#131720] border border-[#212631] rounded-2xl p-5 space-y-4">
+                
+                <div className="relative">
+                  <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-1.5 font-medium">Select Income Layer</label>
+                  <div className="relative">
+                    <select
+                      value={selectedIncomeId}
+                      onChange={(e) => setSelectedIncomeId(e.target.value)}
+                      className="w-full rounded-lg border border-[#3b4150] bg-gradient-to-b from-[#343a46] to-[#1f242e] px-3.5 py-2 text-[13px] text-white outline-none focus:border-cyan-400 transition-all cursor-pointer appearance-none shadow-inner"
+                    >
+                      <option value="">-- Choose Dataset --</option>
+                      {layers.filter(l => l.sourceType === 'kml' && l.name.toLowerCase().includes('income')).map(l => (
+                        <option key={l.id} value={l.id}>{l.name}</option>
+                      ))}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-white">
+                      <svg className="h-4 w-4 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-[10px] uppercase tracking-[0.1em] text-slate-400 mb-1">Select Consumption Layer</label>
-                  <select
-                    value={selectedConsumptionId}
-                    onChange={(e) => setSelectedConsumptionId(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-xs text-white outline-none focus:border-cyan-400 transition-all cursor-pointer"
-                  >
-                    <option value="">-- Choose Dataset --</option>
-                    {layers.filter(l => l.sourceType === 'kml' && l.name.toLowerCase().includes('consumption')).map(l => (
-                      <option key={l.id} value={l.id}>{l.name}</option>
-                    ))}
-                  </select>
+                <div className="relative">
+                  <label className="block text-[10px] uppercase tracking-widest text-slate-400 mb-1.5 font-medium">Select Consumption Layer</label>
+                  <div className="relative">
+                    <select
+                      value={selectedConsumptionId}
+                      onChange={(e) => setSelectedConsumptionId(e.target.value)}
+                      className="w-full rounded-lg border border-[#3b4150] bg-gradient-to-b from-[#343a46] to-[#1f242e] px-3.5 py-2 text-[13px] text-white outline-none focus:border-cyan-400 transition-all cursor-pointer appearance-none shadow-inner"
+                    >
+                      <option value="">-- Choose Dataset --</option>
+                      {layers.filter(l => l.sourceType === 'kml' && l.name.toLowerCase().includes('consumption')).map(l => (
+                        <option key={l.id} value={l.id}>{l.name}</option>
+                      ))}
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-white">
+                      <svg className="h-4 w-4 fill-current" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                    </div>
+                  </div>
                 </div>
 
                 <button
@@ -3655,12 +3669,12 @@ out center;`;
                       setCalculationLoading(false);
                     }
                   }}
-                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-350 disabled:bg-slate-800 text-slate-950 px-4 py-2 text-xs font-bold transition-all shadow-[0_0_12px_rgba(34,211,238,0.15)] disabled:text-slate-650 cursor-pointer"
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 disabled:bg-slate-700 disabled:text-slate-400 text-[#0b101a] px-4 py-2.5 text-[13px] font-bold transition-all cursor-pointer mt-2"
                 >
                   {calculationLoading ? (
                     <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Computing Savings...
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Computing...
                     </>
                   ) : (
                     'Calculate Savings Layer'
