@@ -1,2 +1,3 @@
 - docs(readme): update API documentation for derived layer engine
 - refactor(backend): optimize H3 index generation for larger datasets
+- fix(frontend): resolve tooltip flickering on polygon borders
